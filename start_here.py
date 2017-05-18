@@ -39,7 +39,7 @@ tf.app.flags.DEFINE_float('ep_decay', 1000000, 'steps for epsilon reaching minim
 tf.app.flags.DEFINE_integer('phi_length', 4, 'frames for representing a state')
 tf.app.flags.DEFINE_integer('memory', 1000000, 'replay memory size')
 tf.app.flags.DEFINE_integer('batch', 32, 'training batch size')
-tf.app.flags.DEFINE_string('network', 'linear', 'neural network type')
+tf.app.flags.DEFINE_string('network', 'nature', 'neural network type')
 tf.app.flags.DEFINE_integer('freeze', 10000, 'freeze interval between updates, update network every x trainings')
 tf.app.flags.DEFINE_string('loss_func', 'huber', 'loss function: huber; quadratic')
 tf.app.flags.DEFINE_string('optimizer', 'rmsprop', 'optimizer type')
@@ -53,7 +53,7 @@ tf.app.flags.DEFINE_bool('use_gpu', True, 'use GPUs')
 tf.app.flags.DEFINE_integer('gpus', 2, 'number of GPUs for agents')
 tf.app.flags.DEFINE_string('gpu_config', '{"gpu0": [0], "gpu1": [1]}', 'GPU configuration for agents')
 tf.app.flags.DEFINE_string('threads_specific_config',
-                           """{0: {'rom': 'breakout'}, 1: {'rom': 'breakout'}}""",
+                           """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}}""",
                            'configuration for each agent')
 
 
