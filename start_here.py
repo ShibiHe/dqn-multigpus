@@ -1,0 +1,119 @@
+__author__ = 'frankhe'
+
+import tensorflow as tf
+import numpy as np
+import multiprocessing as mp
+import copy
+import interaction
+import neural_networks
+import agents
+FLAGS = tf.app.flags.FLAGS
+
+# Experiment settings
+tf.app.flags.DEFINE_integer('epochs', 50, 'Number of training epochs')
+tf.app.flags.DEFINE_integer('steps_per_epoch', 250000, 'Number of steps per epoch')
+tf.app.flags.DEFINE_integer('test_length', 125000, 'Number of steps per test')
+tf.app.flags.DEFINE_integer('seed', 1, 'random seed')
+tf.app.flags.DEFINE_integer('summary_fr', 100, 'summary every x training steps')
+tf.app.flags.DEFINE_string('logs_path', './logs', 'tensor board path')
+
+# ALE Environment settings
+tf.app.flags.DEFINE_string('rom', 'breakout', 'game ROM')
+tf.app.flags.DEFINE_string('roms_path', './roms/', 'game ROMs path')
+tf.app.flags.DEFINE_integer('frame_skip', 4, 'every frame_skip frames to act')
+tf.app.flags.DEFINE_integer('buffer_length', 2, 'screen buffer size for one image')
+tf.app.flags.DEFINE_float('repeat_action_probability', 0, 'Probability that action choice will be ignored')
+tf.app.flags.DEFINE_float('input_scale', 255.0, 'image rescale')
+tf.app.flags.DEFINE_integer('input_width', 84, 'environment to agent image width')
+tf.app.flags.DEFINE_integer('input_height', 84, 'environment to agent image width')
+tf.app.flags.DEFINE_integer('num_actions', 2, 'environment accepts x actions')
+tf.app.flags.DEFINE_integer('max_start_no_op', 30, 'Maximum number of null_ops at the start')
+tf.app.flags.DEFINE_bool('lol_end', True, 'lost of life ends training episode')
+
+# Agent settings
+tf.app.flags.DEFINE_float('lr', 0.00025, 'learning rate')
+tf.app.flags.DEFINE_float('discount', 0.99, 'discount rate')
+tf.app.flags.DEFINE_float('ep_st', 1.0, 'epsilon start value')
+tf.app.flags.DEFINE_float('ep_min', 0.1, 'epsilon minimum value')
+tf.app.flags.DEFINE_float('ep_decay', 1000000, 'steps for epsilon reaching minimum')
+tf.app.flags.DEFINE_integer('phi_length', 4, 'frames for representing a state')
+tf.app.flags.DEFINE_integer('memory', 1000000, 'replay memory size')
+tf.app.flags.DEFINE_integer('batch', 32, 'training batch size')
+tf.app.flags.DEFINE_string('network', 'linear', 'neural network type')
+tf.app.flags.DEFINE_integer('freeze', 10000, 'freeze interval between updates, update network every x trainings')
+tf.app.flags.DEFINE_string('loss_func', 'huber', 'loss function: huber; quadratic')
+tf.app.flags.DEFINE_string('optimizer', 'rmsprop', 'optimizer type')
+tf.app.flags.DEFINE_integer('train_fr', 4, 'training frequency: train a batch every x steps')
+tf.app.flags.DEFINE_integer('train_st', 50000, 'training start: training starts after x steps')
+tf.app.flags.DEFINE_bool('clip_reward', True, 'clip reward to -1, 1')
+
+# Multi threads settings
+tf.app.flags.DEFINE_integer('threads', 2, 'CPU threads for agents')
+tf.app.flags.DEFINE_bool('use_gpu', True, 'use GPUs')
+tf.app.flags.DEFINE_integer('gpus', 2, 'number of GPUs for agents')
+tf.app.flags.DEFINE_string('gpu_config', '{"gpu0": [0], "gpu1": [1]}', 'GPU configuration for agents')
+tf.app.flags.DEFINE_string('threads_specific_config',
+                           """{0: {'rom': 'breakout'}, 1: {'rom': 'breakout'}}""",
+                           'configuration for each agent')
+
+
+def initialize(pid, device, flags):
+    print 'initialize process:', pid, ' with GPU:', device, ' game:', flags.rom
+    import os
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = device[-1]
+    np.random.seed(flags.seed)
+    tf.set_random_seed(flags.seed)
+    try:
+        import ale_python_interface
+    except ImportError:
+        import atari_py.ale_python_interface as ale_python_interface
+
+    # initialize ALE environment
+    if flags.rom.endswith('.bin'):
+        rom = flags.rom
+    else:
+        rom = "%s.bin" % flags.rom
+    full_rom_path = os.path.join(flags.roms_path, rom)
+    ale = ale_python_interface.ALEInterface()
+    ale.setInt('random_seed', flags.seed)
+    ale.setBool('sound', False)
+    ale.setBool('display_screen', False)
+    ale.setFloat('repeat_action_probability', flags.repeat_action_probability)
+    ale.loadROM(full_rom_path)
+    num_actions = len(ale.getMinimalActionSet())
+    flags.num_actions = num_actions
+    flags.logs_path = os.path.join(flags.logs_path, 'thread' + str(pid))
+
+    # initialize agent
+    network = neural_networks.DeepQNetwork(pid, flags, device)
+    agent = agents.QLearning(pid, network, flags)
+
+    interaction.Interaction(pid, ale, agent, flags).start()
+
+
+def main(argv=None):
+    if tf.gfile.Exists(FLAGS.logs_path):
+        tf.gfile.DeleteRecursively(FLAGS.logs_path)
+    pid_device = {}
+    d = eval(FLAGS.gpu_config)
+    for device, pids in d.items():
+        for pid in pids:
+            pid_device[pid] = device
+
+    threads_specific_config = eval(FLAGS.threads_specific_config)
+    processes = []
+    for pid in xrange(FLAGS.threads):
+        flags = copy.deepcopy(FLAGS)
+        for key, val in threads_specific_config[pid].items():
+            setattr(flags, key, val)
+        process = mp.Process(target=initialize, args=(pid, pid_device[pid][-1], flags))
+        process.start()
+        processes.append(process)
+
+    for p in processes:
+        p.join()
+
+
+if __name__ == '__main__':
+    tf.app.run()
