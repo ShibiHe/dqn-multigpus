@@ -4,7 +4,7 @@ import image_preprocessing
 
 
 class Interaction(object):
-    def __init__(self, pid, environment, agent, flags):
+    def __init__(self, pid, environment, agent, flags, message_queue):
         """
         :param environment:
          bool game_over()
@@ -20,6 +20,7 @@ class Interaction(object):
         self.width, self.height = self.env.getScreenDims()
         self.agent = agent
         self.flags = flags
+        self.message_queue = message_queue
 
         # terminal when lost of lives == True: do not need to reset env ; == False reset
         self.terminal_lol = False
@@ -42,8 +43,10 @@ class Interaction(object):
         self.terminal_lol = False  # make sure reset env at the start of an epoch
         steps_left = num_steps
         while steps_left > 0:
-            prefix = 'testing' if testing else 'training'
-            print 'PID:', self.pid, prefix, 'epoch:', str(epoch), 'steps_left:', str(steps_left)
+            prefix = 'TEST' if testing else 'TRAIN'
+            message = [self.pid, 'step', [prefix, epoch, steps_left]]
+            self.message_queue.put(message)
+            # print 'PID:', self.pid, prefix, 'epoch:', str(epoch), 'steps_left:', str(steps_left)
             num_steps = self.run_episode(steps_left, testing)
             steps_left -= num_steps
 

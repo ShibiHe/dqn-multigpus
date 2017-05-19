@@ -1,5 +1,7 @@
 __author__ = 'frankhe'
 
+import time
+import curses
 import tensorflow as tf
 import numpy as np
 import multiprocessing as mp
@@ -7,6 +9,7 @@ import copy
 import interaction
 import neural_networks
 import agents
+
 FLAGS = tf.app.flags.FLAGS
 
 # Experiment settings
@@ -14,8 +17,9 @@ tf.app.flags.DEFINE_integer('epochs', 50, 'Number of training epochs')
 tf.app.flags.DEFINE_integer('steps_per_epoch', 250000, 'Number of steps per epoch')
 tf.app.flags.DEFINE_integer('test_length', 125000, 'Number of steps per test')
 tf.app.flags.DEFINE_integer('seed', 1, 'random seed')
-tf.app.flags.DEFINE_integer('summary_fr', 100, 'summary every x training steps')
+tf.app.flags.DEFINE_integer('summary_fr', 500, 'summary every x training steps')
 tf.app.flags.DEFINE_string('logs_path', './logs', 'tensor board path')
+tf.app.flags.DEFINE_bool('curses', False, 'if use curses to show status')
 
 # ALE Environment settings
 tf.app.flags.DEFINE_string('rom', 'breakout', 'game ROM')
@@ -51,14 +55,15 @@ tf.app.flags.DEFINE_bool('clip_reward', True, 'clip reward to -1, 1')
 tf.app.flags.DEFINE_integer('threads', 2, 'CPU threads for agents')
 tf.app.flags.DEFINE_bool('use_gpu', True, 'use GPUs')
 tf.app.flags.DEFINE_integer('gpus', 2, 'number of GPUs for agents')
-tf.app.flags.DEFINE_string('gpu_config', '{"gpu0": [0], "gpu1": [1]}', 'GPU configuration for agents')
+tf.app.flags.DEFINE_string('gpu_config', '{"gpu0": [0], "gpu1": [1]}', 'GPU configuration for agents, default gpu0')
 tf.app.flags.DEFINE_string('threads_specific_config',
                            """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}}""",
                            'configuration for each agent')
 
 
-def initialize(pid, device, flags):
-    print 'initialize process:', pid, ' with GPU:', device, ' game:', flags.rom
+def initialize(pid, device, flags, message_queue):
+    message = 'initialize process: {:d} with GPU: {} game: {}'.format(pid, device, flags.rom)
+    message_queue.put([-1, 'print', message])
     import os
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = device[-1]
@@ -87,9 +92,20 @@ def initialize(pid, device, flags):
 
     # initialize agent
     network = neural_networks.DeepQNetwork(pid, flags, device)
-    agent = agents.QLearning(pid, network, flags)
+    agent = agents.QLearning(pid, network, flags, message_queue)
 
-    interaction.Interaction(pid, ale, agent, flags).start()
+    interaction.Interaction(pid, ale, agent, flags, message_queue).start()
+
+
+def display_threads(message_dict):
+    if not FLAGS.curses:
+        for id, element in message_dict.items():
+            print id, element
+        return
+    # for id, element in message_dict.items():
+    #     if id == -1:
+    #         for message in element.get('print', []):
+    #             stdscr.addstr(print_line_number, 0, message)
 
 
 def main(argv=None):
@@ -101,18 +117,38 @@ def main(argv=None):
         for pid in pids:
             pid_device[pid] = device
 
+    """
+    [pid, 'step', [testing, epoch, steps_left]]
+    [pid, 'speed', [current, avg]]
+    [-1, 'print', message]
+    """
+    message_queue = mp.Queue()
+
     threads_specific_config = eval(FLAGS.threads_specific_config)
     processes = []
     for pid in xrange(FLAGS.threads):
         flags = copy.deepcopy(FLAGS)
-        for key, val in threads_specific_config[pid].items():
+        for key, val in threads_specific_config.get(pid, {}).items():
             setattr(flags, key, val)
-        process = mp.Process(target=initialize, args=(pid, pid_device[pid][-1], flags))
+        process = mp.Process(target=initialize, args=(pid, pid_device.get(pid, "gpu0")[-1], flags, message_queue))
         process.start()
         processes.append(process)
 
-    for p in processes:
-        p.join()
+    while any(p.is_alive() for p in processes):
+        time.sleep(5.0)
+        message_dict = {}
+        while not message_queue.empty():
+            """
+            {pid: {'step': [,,], 'speed': [,]}, -1: {'print': [m1, m2, ...]}}
+            """
+            pid, key, message = message_queue.get()
+            element = message_dict.setdefault(pid, {})
+            if key == 'step' or key == 'speed':
+                element[key] = message
+            if key == 'print':
+                element.setdefault(key, []).append(message)
+        if message_dict:  # not empty
+            display_threads(message_dict)
 
 
 if __name__ == '__main__':

@@ -5,10 +5,11 @@ import data_set
 
 
 class QLearning(object):
-    def __init__(self, pid, network, flags):
+    def __init__(self, pid, network, flags, message_queue):
         self.pid = pid
         self.network = network
         self.flags = flags
+        self.message_queue = message_queue
         self.data_set = data_set.DataSet(flags)
         self.epsilon = flags.ep_st
         if flags.ep_decay != 0:
@@ -92,8 +93,10 @@ class QLearning(object):
 
         rho = 0.98
         self.steps_sec_ema = rho * self.steps_sec_ema + (1.0 - rho) * (self.step_counter / episode_time)
-        print 'PID:', self.pid, 'steps/second current:{:.2f}, avg:{:.2f}'.format(self.step_counter/episode_time,
-                                                                                 self.steps_sec_ema)
+        # print 'PID:', self.pid, 'steps/second current:{:.2f}, avg:{:.2f}'.format(self.step_counter/episode_time,
+        #                                                                          self.steps_sec_ema)
+        message = [self.pid, 'speed', [self.step_counter/episode_time, self.steps_sec_ema]]
+        self.message_queue.put(message)
 
     def choose_action(self, img, epsilon):
         if np.random.rand() < epsilon:
@@ -157,8 +160,11 @@ class QLearning(object):
         if self.testing_data is not None:
             self.state_action_avg_val = np.mean(np.max(self.network.get_action_values(self.testing_data), axis=1))
         self.reward_per_episode = self.total_reward / float(self.episode_counter)
-        print 'PID', self.pid, 'reward per episode:', self.reward_per_episode, 'total reward', self.total_reward, \
-            'mean q:', self.state_action_avg_val
+        # print 'PID', self.pid, 'reward per episode:', self.reward_per_episode, 'total reward', self.total_reward, \
+        #     'mean q:', self.state_action_avg_val
+        message = 'PID:{:d}    total_reward={:.1f}  reward_per_episode={:.1f}     mean q={:.1f}'.format(
+            self.pid, self.total_reward, self.reward_per_episode, self.state_action_avg_val)
+        self.message_queue.put([-1, 'print', message])
         self.network.epoch_summary(epoch, self.epoch_time, self.state_action_avg_val, self.total_reward,
                                    self.reward_per_episode, self.steps_sec_ema)
         self.epoch_start_time = time.time()
