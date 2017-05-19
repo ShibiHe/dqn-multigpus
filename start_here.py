@@ -107,7 +107,10 @@ def display_threads(message_dict):
                 for message in element.get('print', []):
                     print message
             else:
-                one_line += str(id) + str(element) + ' '
+                one_line += '#{:d}:{} E{:d} {:.1f}% St/Sec: {:d}  '.format(
+                    id, element['step'][0], element['step'][1], 1.0 - float(element['step'][2])/FLAGS.steps_per_epoch,
+                    element['speed'][0]
+                )
         sys.stdout.write(one_line)
         sys.stdout.flush()
         return
