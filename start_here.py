@@ -145,6 +145,7 @@ def main(argv=None):
         for key, val in threads_specific_config.get(pid, {}).items():
             setattr(flags, key, val)
         process = mp.Process(target=initialize, args=(pid, pid_device.get(pid, "gpu0")[-1], flags, message_queue))
+        process.daemon = True
         process.start()
         processes.append(process)
 
