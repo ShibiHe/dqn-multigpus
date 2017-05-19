@@ -2,6 +2,7 @@ __author__ = 'frankhe'
 
 import time
 import curses
+import sys
 import tensorflow as tf
 import numpy as np
 import multiprocessing as mp
@@ -99,8 +100,16 @@ def initialize(pid, device, flags, message_queue):
 
 def display_threads(message_dict):
     if not FLAGS.curses:
+        one_line = '\r'
         for id, element in message_dict.items():
-            print id, element
+            if id == -1:
+                print
+                for message in element.get('print', []):
+                    print message
+            else:
+                one_line += str(id) + str(element) + ' '
+        sys.stdout.write(one_line)
+        sys.stdout.flush()
         return
     # for id, element in message_dict.items():
     #     if id == -1:
