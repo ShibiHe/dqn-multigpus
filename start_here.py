@@ -109,7 +109,7 @@ def display_threads(message_dict):
             else:
                 total_steps = FLAGS.steps_per_epoch if element['step'][1] == 'TRAIN' else FLAGS.test_length
                 one_line += '#{:d}:{} E{:d} {:.1f}% St/Sec: {:d}  '.format(
-                    id, element['step'][0], element['step'][1], 1.0 - float(element['step'][2])/FLAGS.steps_per_epoch,
+                    id, element['step'][0], element['step'][1], 1.0 - float(element['step'][2])/total_steps,
                     element['speed'][0]
                 )
         sys.stdout.write(one_line)
