@@ -56,7 +56,7 @@ tf.app.flags.DEFINE_bool('clip_reward', True, 'clip reward to -1, 1')
 tf.app.flags.DEFINE_integer('threads', 2, 'CPU threads for agents')
 tf.app.flags.DEFINE_bool('use_gpu', True, 'use GPUs')
 tf.app.flags.DEFINE_integer('gpus', 2, 'number of GPUs for agents')
-tf.app.flags.DEFINE_string('gpu_config', '{"gpu0": [0], "gpu1": [1]}', 'GPU configuration for agents, default gpu0')
+tf.app.flags.DEFINE_string('gpu_config', "{'gpu0': [0], 'gpu1': [1]}", 'GPU configuration for agents, default gpu0')
 tf.app.flags.DEFINE_string('threads_specific_config',
                            """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}}""",
                            'configuration for each agent')
@@ -112,7 +112,7 @@ def display_threads(message_dict):
                     one_line += '#{:d}:{} E{:d} {:.1f}% '.format(
                         id, element['step'][0], element['step'][1], (1.0 - float(element['step'][2])/total_steps) * 100)
                 if 'speed' in element:
-                    one_line += ' St/Sec: {:d}  '.format(element['speed'][0])
+                    one_line += '  St/Sec: cur:{:d} avg:{:d}'.format(element['speed'][0], element['speed'][1])
         sys.stdout.write(one_line)
         sys.stdout.flush()
         return

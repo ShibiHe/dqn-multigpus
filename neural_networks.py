@@ -50,6 +50,8 @@ class DeepQNetwork(object):
         self.opt = None
         if self.flags.optimizer == 'rmsprop':
             self.opt = tf.train.RMSPropOptimizer(self.flags.lr, decay=0.95, epsilon=0.01)
+        if self.flags.optimizer == 'adam':
+            self.opt = tf.train.AdamOptimizer(self.flags.lr, epsilon=0.01)
         assert self.opt is not None
 
     def _construct_training_graph(self):

@@ -162,8 +162,8 @@ class QLearning(object):
         self.reward_per_episode = self.total_reward / float(self.episode_counter)
         # print 'PID', self.pid, 'reward per episode:', self.reward_per_episode, 'total reward', self.total_reward, \
         #     'mean q:', self.state_action_avg_val
-        message = 'PID:{:d}    total_reward={:.1f}  reward_per_episode={:.1f}     mean q={:.1f}'.format(
-            self.pid, self.total_reward, self.reward_per_episode, self.state_action_avg_val)
+        message = 'PID:{:d}  epoch:{:d}  total_reward={:.1f}  reward_per_episode={:.1f}     mean q={:.1f}'.format(
+            self.pid, epoch, self.total_reward, self.reward_per_episode, self.state_action_avg_val)
         self.message_queue.put([-1, 'print', message])
         self.network.epoch_summary(epoch, self.epoch_time, self.state_action_avg_val, self.total_reward,
                                    self.reward_per_episode, self.steps_sec_ema)
