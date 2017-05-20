@@ -95,7 +95,7 @@ class QLearning(object):
         self.steps_sec_ema = rho * self.steps_sec_ema + (1.0 - rho) * (self.step_counter / episode_time)
         # print 'PID:', self.pid, 'steps/second current:{:.2f}, avg:{:.2f}'.format(self.step_counter/episode_time,
         #                                                                          self.steps_sec_ema)
-        message = [self.pid, 'speed', [int(self.step_counter/episode_time), int(self.steps_sec_ema)]]
+        message = [self.pid, 'speed', [int(self.step_counter / episode_time), int(self.steps_sec_ema)]]
         self.message_queue.put(message)
 
     def choose_action(self, img, epsilon):
@@ -168,8 +168,3 @@ class QLearning(object):
         self.network.epoch_summary(epoch, self.epoch_time, self.state_action_avg_val, self.total_reward,
                                    self.reward_per_episode, self.steps_sec_ema)
         self.epoch_start_time = time.time()
-
-
-
-
-

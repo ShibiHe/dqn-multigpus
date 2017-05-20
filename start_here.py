@@ -53,12 +53,15 @@ tf.app.flags.DEFINE_integer('train_st', 50000, 'training start: training starts 
 tf.app.flags.DEFINE_bool('clip_reward', True, 'clip reward to -1, 1')
 
 # Multi threads settings
-tf.app.flags.DEFINE_integer('threads', 2, 'CPU threads for agents')
+tf.app.flags.DEFINE_integer('threads', 4, 'CPU threads for agents')
 tf.app.flags.DEFINE_bool('use_gpu', True, 'use GPUs')
-tf.app.flags.DEFINE_integer('gpus', 2, 'number of GPUs for agents')
-tf.app.flags.DEFINE_string('gpu_config', "{'gpu0': [0], 'gpu1': [1]}", 'GPU configuration for agents, default gpu0')
+tf.app.flags.DEFINE_integer('gpus', 4, 'number of GPUs for agents')
+tf.app.flags.DEFINE_string('gpu_config',
+                           """{'gpu0': [0], 'gpu1': [1], 'gpu2': [2], 'gpu3': [3]}""",
+                           'GPU configuration for agents, default gpu0')
 tf.app.flags.DEFINE_string('threads_specific_config',
-                           """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}}""",
+                           """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}, 2: {'rom': 'qbert'},
+                            3: {'rom': 'space_invaders'}}""",
                            'configuration for each agent')
 
 
@@ -89,7 +92,7 @@ def initialize(pid, device, flags, message_queue):
     ale.loadROM(full_rom_path)
     num_actions = len(ale.getMinimalActionSet())
     flags.num_actions = num_actions
-    flags.logs_path = os.path.join(flags.logs_path, 'thread' + str(pid))
+    flags.logs_path = os.path.join(flags.logs_path, '#' + str(pid) + '_' + flags.rom)
 
     # initialize agent
     network = neural_networks.DeepQNetwork(pid, flags, device)
@@ -101,8 +104,8 @@ def initialize(pid, device, flags, message_queue):
 def display_threads(message_dict):
     if not FLAGS.curses:
         one_line = '\r'
-        for id, element in message_dict.items():
-            if id == -1:
+        for pid, element in message_dict.items():
+            if pid == -1:
                 print
                 for message in element.get('print', []):
                     print message
@@ -110,7 +113,7 @@ def display_threads(message_dict):
                 if 'step' in element:
                     total_steps = FLAGS.steps_per_epoch if element['step'][0] == 'TRAIN' else FLAGS.test_length
                     one_line += '#{:d}:{} E{:d} {:.1f}% '.format(
-                        id, element['step'][0], element['step'][1], (1.0 - float(element['step'][2])/total_steps) * 100)
+                        pid, element['step'][0], element['step'][1], (1.0 - float(element['step'][2])/total_steps) * 100)
                 if 'speed' in element:
                     one_line += '  St/Sec: cur:{:d} avg:{:d}'.format(element['speed'][0], element['speed'][1])
         sys.stdout.write(one_line)
