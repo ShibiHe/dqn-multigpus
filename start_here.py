@@ -17,7 +17,7 @@ FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_integer('epochs', 50, 'Number of training epochs')
 tf.app.flags.DEFINE_integer('steps_per_epoch', 250000, 'Number of steps per epoch')
 tf.app.flags.DEFINE_integer('test_length', 125000, 'Number of steps per test')
-tf.app.flags.DEFINE_integer('seed', 1, 'random seed')
+tf.app.flags.DEFINE_integer('seed', 123456, 'random seed')
 tf.app.flags.DEFINE_integer('summary_fr', 500, 'summary every x training steps')
 tf.app.flags.DEFINE_string('logs_path', './logs', 'tensor board path')
 tf.app.flags.DEFINE_bool('curses', False, 'if use curses to show status')
@@ -45,7 +45,7 @@ tf.app.flags.DEFINE_integer('phi_length', 4, 'frames for representing a state')
 tf.app.flags.DEFINE_integer('memory', 1000000, 'replay memory size')
 tf.app.flags.DEFINE_integer('batch', 32, 'training batch size')
 tf.app.flags.DEFINE_string('network', 'nature', 'neural network type')
-tf.app.flags.DEFINE_integer('freeze', 10000, 'freeze interval between updates, update network every x trainings')
+tf.app.flags.DEFINE_integer('freeze', 2000, 'freeze interval between updates, update network every x trainings')
 tf.app.flags.DEFINE_string('loss_func', 'huber', 'loss function: huber; quadratic')
 tf.app.flags.DEFINE_string('optimizer', 'rmsprop', 'optimizer type')
 tf.app.flags.DEFINE_integer('train_fr', 4, 'training frequency: train a batch every x steps')
@@ -85,7 +85,7 @@ def initialize(pid, device, flags, message_queue):
         rom = "%s.bin" % flags.rom
     full_rom_path = os.path.join(flags.roms_path, rom)
     ale = ale_python_interface.ALEInterface()
-    ale.setInt('random_seed', flags.seed)
+    ale.setInt('random_seed', np.random.randint(1000))
     ale.setBool('sound', False)
     ale.setBool('display_screen', False)
     ale.setFloat('repeat_action_probability', flags.repeat_action_probability)
@@ -115,7 +115,7 @@ def display_threads(message_dict):
                     one_line += '#{:d}:{} E{:d} {:.1f}% '.format(
                         pid, element['step'][0], element['step'][1], (1.0 - float(element['step'][2])/total_steps) * 100)
                 if 'speed' in element:
-                    one_line += '  St/Sec: cur:{:d} avg:{:d}'.format(element['speed'][0], element['speed'][1])
+                    one_line += ' St/Sec: cur:{:d} avg:{:d} '.format(element['speed'][0], element['speed'][1])
         sys.stdout.write(one_line)
         sys.stdout.flush()
         return

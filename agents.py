@@ -129,14 +129,15 @@ class QLearning(object):
         else:
             # Training--------------------------
             self.data_set.add_sample(self.last_img, self.last_action, reward, False, start_index=self.start_index)
-            action = self.choose_action(observation, self.epsilon)
-
             if len(self.data_set) > self.flags.train_st:
                 self.epsilon = max(self.flags.ep_min, self.epsilon - self.epsilon_rate)
+                action = self.choose_action(observation, self.epsilon)
                 if self.step_counter % self.flags.train_fr == 0:
                     loss = self._train()
                     self.trained_batch_counter += 1
                     self.loss_averages.append(loss)
+            else:
+                action = self.choose_action(observation, self.epsilon)
             self.last_action = action
             self.last_img = observation
         return action

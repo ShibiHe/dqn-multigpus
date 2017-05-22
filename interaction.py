@@ -91,7 +91,7 @@ class Interaction(object):
         assert self.buffer_count >= self.buffer_length
         index = self.buffer_count % self.buffer_length - 1
         max_image = self.screen_buffer[index]
-        for i in xrange(self.buffer_length):
+        for i in xrange(1, self.buffer_length):
             max_image = np.maximum(max_image, self.screen_buffer[index-i, ...])
         return image_preprocessing.resize(max_image, size=(self.flags.input_height, self.flags.input_width))
 

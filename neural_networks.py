@@ -216,8 +216,6 @@ class DeepQNetwork(object):
                                                         self.actions: actions,
                                                         self.rewards: rewards,
                                                         self.terminals: terminals})
-        if global_step % self.flags.freeze == 0:
-            self.update_network()
         if global_step % self.flags.summary_fr == 0:
             summary = self.sess.run(self.training_summary_op, feed_dict={self.images: current_states,
                                                                          self.images_old: target_states,
@@ -225,6 +223,8 @@ class DeepQNetwork(object):
                                                                          self.rewards: rewards,
                                                                          self.terminals: terminals})
             self.summary_writer.add_summary(summary, global_step)
+        if global_step % self.flags.freeze == 0:
+            self.update_network()
         return loss
 
     def update_network(self):
@@ -263,7 +263,7 @@ if __name__ == '__main__':
         def __init__(self, *args, **kwargs):
             super(AttrDict, self).__init__(*args, **kwargs)
             self.__dict__ = self
-    my_flags = AttrDict(input_height=2, input_width=2, num_actions=6, phi_length=4, use_gpu=False, network='linear',
+    my_flags = AttrDict(input_height=84, input_width=84, num_actions=6, phi_length=4, use_gpu=False, network='nature',
                         logs_path='./logs', discount=0.99, loss_func='huber', optimizer='rmsprop', lr=0.1,
                         input_scale=2, freeze=10, summary_fr=1)
     dqn = DeepQNetwork(1, my_flags, '0')
@@ -284,9 +284,4 @@ if __name__ == '__main__':
         # # for x in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='old/linear'):
         # #     print self.sess.run(x)
 
-    # x = dqn.get_action_values(states1)
-    # print x
-    # print np.mean(np.max(x, axis=1))
-    for i in range(100):
-        dqn.train(states1, states2, rewards, actions, terminals)
-        dqn.epoch_summary(i, 2*i, i**2, i/2)
+    # dqn.train(states1, states2, rewards, actions, terminals)
