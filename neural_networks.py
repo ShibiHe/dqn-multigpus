@@ -92,16 +92,16 @@ class DeepQNetwork(object):
     def _construct_summary_ops(self):
         # summaries of testing and global values
         with tf.name_scope('summaries_for_agent'):
-            self.steps_sec_ema = tf.placeholder(tf.float32, [])
-            tf.add_to_collection('summaries_per_epoch', tf.summary.scalar('running_steps_per_second', self.steps_sec_ema))
             self.epoch_time = tf.placeholder(tf.float32, [])
-            tf.add_to_collection('summaries_per_epoch', tf.summary.scalar('epoch_time', self.epoch_time))
+            tf.add_to_collection('summaries_per_epoch', tf.summary.scalar('TIME_epoch', self.epoch_time))
             self.state_action_avg_val = tf.placeholder(tf.float32, [])
             tf.add_to_collection('summaries_per_epoch', tf.summary.scalar('mean q value', self.state_action_avg_val))
             self.total_reward = tf.placeholder(tf.float32, [])
-            tf.add_to_collection('summaries_per_epoch', tf.summary.scalar('testing total reward', self.total_reward))
+            tf.add_to_collection('summaries_per_epoch', tf.summary.scalar('TOTAL_REWARD__test', self.total_reward))
             self.reward_per_episode = tf.placeholder(tf.float32, [])
-            tf.add_to_collection('summaries_per_epoch', tf.summary.scalar('testing reward per episode', self.reward_per_episode))
+            tf.add_to_collection('summaries_per_epoch', tf.summary.scalar('REWARD_per_EPISODE__test', self.reward_per_episode))
+            self.episode_avg_loss = tf.placeholder(tf.float32, [])
+            tf.add_to_collection('summaries_per_episode', tf.summary.scalar('EPISODE_AVG_LOSS', self.episode_avg_loss))
 
         # image summaries for current and target images
         tf.add_to_collection('training_summaries',
@@ -124,6 +124,7 @@ class DeepQNetwork(object):
         # activation summaries already added during inference construction
 
         self.summary_per_epoch_op = tf.summary.merge(tf.get_collection('summaries_per_epoch'), name='summary_per_epoch_op')
+        self.summary_per_episode_op = tf.summary.merge(tf.get_collection('summaries_per_episode'), name='summary_per_episode_op')
         self.training_summary_op = tf.summary.merge(tf.get_collection('training_summaries'), name='training_summaries')
 
     def _activation_summary(self, x):
@@ -242,7 +243,7 @@ class DeepQNetwork(object):
         action = np.argmax(action_values, axis=1)[0]
         return action
 
-    def epoch_summary(self, epoch, epoch_time, mean_q, total_reward, reward_per_ep, steps_sec_ema):
+    def epoch_summary(self, epoch, epoch_time, mean_q, total_reward, reward_per_ep):
         """
             self.epoch_time
             self.state_action_avg_val = tf.placeholder(tf.float32, [])
@@ -253,9 +254,13 @@ class DeepQNetwork(object):
                                       feed_dict={self.epoch_time: epoch_time,
                                                  self.state_action_avg_val: mean_q,
                                                  self.total_reward: total_reward,
-                                                 self.reward_per_episode: reward_per_ep,
-                                                 self.steps_sec_ema: steps_sec_ema})
+                                                 self.reward_per_episode: reward_per_ep})
         self.summary_writer.add_summary(summary, epoch)
+
+    def episode_summary(self, episode_avg_loss):
+        summary, step = self.sess.run([self.summary_per_episode_op, self.global_step],
+                                      feed_dict={self.episode_avg_loss: episode_avg_loss})
+        self.summary_writer.add_summary(summary, step)
 
 
 if __name__ == '__main__':

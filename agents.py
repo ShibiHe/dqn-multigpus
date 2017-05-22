@@ -97,6 +97,8 @@ class QLearning(object):
         #                                                                          self.steps_sec_ema)
         message = [self.pid, 'speed', [int(self.step_counter / episode_time), int(self.steps_sec_ema)]]
         self.message_queue.put(message)
+        if self.loss_averages:  # if not empty
+            self.network.episode_summary(np.mean(self.loss_averages))
 
     def choose_action(self, img, epsilon):
         if np.random.rand() < epsilon:
