@@ -169,5 +169,5 @@ class QLearning(object):
             self.pid, epoch, self.total_reward, self.reward_per_episode, self.state_action_avg_val)
         self.message_queue.put([-1, 'print', message])
         self.network.epoch_summary(epoch, self.epoch_time, self.state_action_avg_val, self.total_reward,
-                                   self.reward_per_episode, self.steps_sec_ema)
+                                   self.reward_per_episode)
         self.epoch_start_time = time.time()
