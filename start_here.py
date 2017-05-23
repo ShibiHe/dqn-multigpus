@@ -61,7 +61,7 @@ tf.app.flags.DEFINE_string('gpu_config',
                            """{'gpu0': [0], 'gpu1': [1], 'gpu2': [2], 'gpu3': [3]}""",
                            'GPU configuration for agents, default gpu0')
 tf.app.flags.DEFINE_string('threads_specific_config',
-                           """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}, 2: {'rom': 'qbert'},
+                           """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}, 2: {'rom': 'beam_rider'},
                             3: {'rom': 'space_invaders'}}""",
                            'configuration for each agent')
 

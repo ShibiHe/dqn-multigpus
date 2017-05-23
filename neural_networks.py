@@ -2,6 +2,7 @@ __author__ = 'frankhe'
 import tensorflow as tf
 import tensorflow.contrib as tfc
 import numpy as np
+import os
 
 
 class DeepQNetwork(object):
@@ -41,6 +42,7 @@ class DeepQNetwork(object):
             config.gpu_options.allow_growth = True
             config.allow_soft_placement = True
         init = tf.global_variables_initializer()
+        self.saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'))
         self.sess = tf.Session(config=config)
         self.sess.run(init)
         self.update_network()
@@ -257,6 +259,10 @@ class DeepQNetwork(object):
                                                  self.reward_per_episode: reward_per_ep})
         self.summary_writer.add_summary(summary, epoch)
 
+    def epoch_model_save(self, epoch):
+        ckpt_path = os.path.join(self.flags.logs_path, 'model.ckpt')
+        self.saver.save(self.sess, ckpt_path, epoch)
+
     def episode_summary(self, episode_avg_loss):
         summary, step = self.sess.run([self.summary_per_episode_op, self.global_step],
                                       feed_dict={self.episode_avg_loss: episode_avg_loss})
@@ -268,8 +274,8 @@ if __name__ == '__main__':
         def __init__(self, *args, **kwargs):
             super(AttrDict, self).__init__(*args, **kwargs)
             self.__dict__ = self
-    my_flags = AttrDict(input_height=84, input_width=84, num_actions=6, phi_length=4, use_gpu=False, network='nature',
-                        logs_path='./logs', discount=0.99, loss_func='huber', optimizer='rmsprop', lr=0.1,
+    my_flags = AttrDict(input_height=84, input_width=84, num_actions=6, phi_length=4, use_gpu=False, network='linear',
+                        logs_path='./logs', discount=0.99, loss_func='quadratic', optimizer='rmsprop', lr=0.1,
                         input_scale=2, freeze=10, summary_fr=1)
     dqn = DeepQNetwork(1, my_flags, '0')
     # phi = np.random.randint(0, 10, (my_flags.phi_length, my_flags.input_height, my_flags.input_width), dtype='uint8')
@@ -278,15 +284,17 @@ if __name__ == '__main__':
     bs = 2
     states1 = np.random.randint(0, 10, (bs, my_flags.phi_length, my_flags.input_height, my_flags.input_width), dtype='uint8')
     states2 = np.random.randint(0, 10, (bs, my_flags.phi_length, my_flags.input_height, my_flags.input_width), dtype='uint8')
+    phi = np.random.randint(0, 10, (my_flags.phi_length, my_flags.input_height, my_flags.input_width), dtype='uint8')
     actions = np.random.randint(0, my_flags.num_actions, (bs,))
     rewards = np.random.randint(0, 10, (bs,))
     terminals = np.random.randint(0, 1, (bs,), dtype=np.bool_)
 
-     # with tf.variable_scope('old/linear', reuse=True):
-        #     x = tf.get_variable('weights')
-        #     x = self.sess.run(x)
-        #     print x
-        # # for x in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='old/linear'):
-        # #     print self.sess.run(x)
+    print dqn.get_action_values(states1)
+    print dqn.get_action_values_old(states2)
+    print actions
+    print rewards
+    print terminals
 
-    # dqn.train(states1, states2, rewards, actions, terminals)
+    # print dqn.train(states1, states2, rewards, actions, terminals)
+    print dqn.get_action_values(np.expand_dims(phi, 0))[0]
+    print dqn.choose_action(phi)

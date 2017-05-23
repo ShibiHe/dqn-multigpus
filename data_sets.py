@@ -3,11 +3,13 @@ import numpy as np
 
 
 class DataSet(object):
-    def __init__(self, flags):
+    def __init__(self, flags, max_steps=None):
         self.flags = flags
         self.width = flags.input_width
         self.height = flags.input_height
         self.max_steps = flags.memory
+        if max_steps is not None:
+            self.max_steps = max_steps
         self.phi_length = flags.phi_length
 
         self.imgs = np.zeros((self.max_steps, self.height, self.width), dtype='uint8')

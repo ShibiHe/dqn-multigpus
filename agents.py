@@ -1,7 +1,7 @@
 __author__ = 'frankhe'
 import time
 import numpy as np
-import data_set
+import data_sets
 
 
 class QLearning(object):
@@ -10,7 +10,8 @@ class QLearning(object):
         self.network = network
         self.flags = flags
         self.message_queue = message_queue
-        self.data_set = data_set.DataSet(flags)
+        self.train_data_set = data_sets.DataSet(flags)
+        self.test_data_set = data_sets.DataSet(flags, max_steps=flags.phi_length * 2)
         self.epsilon = flags.ep_st
         if flags.ep_decay != 0:
             self.epsilon_rate = (flags.ep_st - flags.ep_min) / flags.ep_decay
@@ -73,6 +74,7 @@ class QLearning(object):
          testing:
             terminal = True: game over
             terminal = False: game is not over but not enough steps
+        :param reward: received reward
         """
         self.step_counter += 1
         episode_time = time.time() - self.start_time
@@ -85,8 +87,8 @@ class QLearning(object):
                 self.episode_counter += 1
                 self.total_reward += self.episode_reward
         else:
-            self.data_set.add_sample(self.last_img, self.last_action, reward, True,
-                                     start_index=self.start_index)
+            self.train_data_set.add_sample(self.last_img, self.last_action, reward, True,
+                                           start_index=self.start_index)
         """
         update index not finished
         """
@@ -100,17 +102,18 @@ class QLearning(object):
         if self.loss_averages:  # if not empty
             self.network.episode_summary(np.mean(self.loss_averages))
 
-    def choose_action(self, img, epsilon):
+    def choose_action(self, data_set, img, epsilon, reward_received):
+        data_set.add_sample(self.last_img, self.last_action, reward_received, False, start_index=self.start_index)
         if np.random.rand() < epsilon:
             return np.random.randint(0, self.flags.num_actions)
-        phi = self.data_set.phi(img)
+        phi = data_set.phi(img)
         if self.step_counter < self.flags.phi_length:
             phi[0:self.flags.phi_length - 1] = np.stack([img for _ in xrange(self.flags.phi_length - 1)], axis=0)
         action = self.network.choose_action(phi)
         return action
 
     def _train(self):
-        imgs, actions, rewards, terminals = self.data_set.random_batch(self.flags.batch)
+        imgs, actions, rewards, terminals = self.train_data_set.random_batch(self.flags.batch)
         cur_images = imgs[:, :-1, ...]
         target_images = imgs[:, 1:, ...]
         return self.network.train(cur_images, target_images, rewards, actions, terminals)
@@ -127,25 +130,25 @@ class QLearning(object):
         # TESTING---------------------------
         if self.testing:
             self.episode_reward += reward
-            action = self.choose_action(observation, .05)
+            action = self.choose_action(self.test_data_set, observation, .01, reward)
         else:
             # Training--------------------------
-            self.data_set.add_sample(self.last_img, self.last_action, reward, False, start_index=self.start_index)
-            if len(self.data_set) > self.flags.train_st:
+            if len(self.train_data_set) > self.flags.train_st:
                 self.epsilon = max(self.flags.ep_min, self.epsilon - self.epsilon_rate)
-                action = self.choose_action(observation, self.epsilon)
+                action = self.choose_action(self.train_data_set, observation, self.epsilon, reward)
                 if self.step_counter % self.flags.train_fr == 0:
                     loss = self._train()
                     self.trained_batch_counter += 1
                     self.loss_averages.append(loss)
             else:
-                action = self.choose_action(observation, self.epsilon)
-            self.last_action = action
-            self.last_img = observation
+                action = self.choose_action(self.train_data_set, observation, self.epsilon, reward)
+        self.last_action = action
+        self.last_img = observation
         return action
 
     def finish_epoch(self, epoch):
         # save model epoch parameters
+        self.network.epoch_model_save(epoch)
         current_time = time.time()
         self.epoch_time = current_time - self.epoch_start_time
 
@@ -157,8 +160,8 @@ class QLearning(object):
     def finish_testing(self, epoch):
         self.testing = False
         test_data_size = 3200
-        if self.testing_data is None and len(self.data_set) > test_data_size:
-            imgs, _, _, _ = self.data_set.random_batch(test_data_size)
+        if self.testing_data is None and len(self.train_data_set) > test_data_size:
+            imgs, _, _, _ = self.train_data_set.random_batch(test_data_size)
             self.testing_data = imgs[:, :-1, ...]
         if self.testing_data is not None:
             self.state_action_avg_val = np.mean(np.max(self.network.get_action_values(self.testing_data), axis=1))
