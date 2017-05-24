@@ -48,7 +48,7 @@ tf.app.flags.DEFINE_string('network', 'nature', 'neural network type')
 tf.app.flags.DEFINE_integer('freeze', 2000, """freeze interval between updates, update network every x trainings. 
 To be noticed, Nature paper is inconsistent with its code.""")
 tf.app.flags.DEFINE_string('loss_func', 'huber', 'loss function: huber; quadratic')
-tf.app.flags.DEFINE_string('optimizer', 'rmsprop', 'optimizer type')
+tf.app.flags.DEFINE_string('optimizer', 'adam', 'optimizer type')
 tf.app.flags.DEFINE_integer('train_fr', 4, 'training frequency: train a batch every x steps')
 tf.app.flags.DEFINE_integer('train_st', 50000, 'training start: training starts after x steps')
 tf.app.flags.DEFINE_bool('clip_reward', True, 'clip reward to -1, 1')
@@ -86,7 +86,7 @@ def initialize(pid, device, flags, message_queue):
         rom = "%s.bin" % flags.rom
     full_rom_path = os.path.join(flags.roms_path, rom)
     ale = ale_python_interface.ALEInterface()
-    ale.setInt('random_seed', np.random.randint(1000))
+    ale.setInt('random_seed', flags.seed)
     ale.setBool('sound', False)
     ale.setBool('display_screen', False)
     ale.setFloat('repeat_action_probability', flags.repeat_action_probability)
@@ -113,7 +113,7 @@ def display_threads(message_dict):
             else:
                 if 'step' in element:
                     total_steps = FLAGS.steps_per_epoch if element['step'][0] == 'TRAIN' else FLAGS.test_length
-                    one_line += '#{:d}:{} E{:d} {:.1f}% '.format(
+                    one_line += '  #{:d}:{} E{:d} {:.1f}% '.format(
                         pid, element['step'][0], element['step'][1], (1.0 - float(element['step'][2])/total_steps) * 100)
                 if 'speed' in element:
                     one_line += ' St/Sec: cur:{:d} avg:{:d} '.format(element['speed'][0], element['speed'][1])
