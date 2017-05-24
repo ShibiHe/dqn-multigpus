@@ -61,8 +61,8 @@ tf.app.flags.DEFINE_string('gpu_config',
                            """{'gpu0': [0], 'gpu1': [1], 'gpu2': [2], 'gpu3': [3]}""",
                            'GPU configuration for agents, default gpu0')
 tf.app.flags.DEFINE_string('threads_specific_config',
-                           """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}, 2: {'rom': 'beam_rider'},
-                            3: {'rom': 'space_invaders'}}""",
+                           """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}, 2: {'rom': 'beam_rider'}, """
+                           """3: {'rom': 'space_invaders'}}""",
                            'configuration for each agent')
 
 
@@ -97,6 +97,11 @@ def initialize(pid, device, flags, message_queue):
 
     # initialize agent
     network = neural_networks.DeepQNetwork(pid, flags, device)
+
+    setting_file = open(os.path.join(flags.logs_path, 'flags.txt'), mode='w+')
+    for key, item in flags.__flags.items():
+        setting_file.write(key + ' : ' + str(item) + '\n')
+
     agent = agents.QLearning(pid, network, flags, message_queue)
 
     interaction.Interaction(pid, ale, agent, flags, message_queue).start()
