@@ -141,8 +141,8 @@ class DeepQNetwork(object):
         channels = self.flags.phi_length
         """
         images batch * channels * height * width
-        :param input_width: 84
-        :param input_height: 84
+        :param input_width: 84 or 160
+        :param input_height: 84 or 160
         :param output_dim: num_actions
         :param channels: phi_length
         :return: inference layer
@@ -194,6 +194,98 @@ class DeepQNetwork(object):
             with tf.variable_scope('linear1'):
                 hiddens = 512 ; dim = conv3_shape[1] * conv3_shape[2] * conv3_shape[3]
                 reshape = tf.reshape(conv3, [-1, dim])
+                weights = tf.get_variable('weights', [dim, hiddens], tf.float32,
+                                          initializer=tfc.layers.variance_scaling_initializer(uniform=True))
+                bias = tf.get_variable('bias', [hiddens], tf.float32,
+                                       initializer=tf.constant_initializer(0.1))
+                pre_activations = tf.add(tf.matmul(reshape, weights), bias)
+                linear1 = tf.nn.relu(pre_activations)
+                self._activation_summary(linear1)
+            with tf.variable_scope('linear2'):
+                hiddens = output_dim ; dim = 512
+                weights = tf.get_variable('weights', [dim, hiddens], tf.float32,
+                                          initializer=tfc.layers.variance_scaling_initializer(uniform=True))
+                bias = tf.get_variable('bias', [hiddens], tf.float32,
+                                       initializer=tf.constant_initializer(0.1))
+                action_values = tf.add(tf.matmul(linear1, weights), bias)
+                self._activation_summary(action_values)
+        if network_type == 'vgg':
+            with tf.variable_scope('conv1'):
+                size = 7; channels = channels; filters = 16; stride = 2
+                kernel = tf.get_variable('weights', [size, size, channels, filters], dtype=tf.float32,
+                                         initializer=tfc.layers.variance_scaling_initializer(uniform=True))
+                conv = tf.nn.conv2d(images, kernel, [1, 1, stride, stride], padding='SAME', data_format='NCHW')
+                bias = tf.get_variable('bias', [filters], dtype=tf.float32,
+                                       initializer=tf.constant_initializer(0.1))
+                pre_activations = tf.nn.bias_add(conv, bias, 'NCHW')
+                conv1 = tf.nn.relu(pre_activations)
+                self._activation_summary(conv1)
+            with tf.variable_scope('pool1'):
+                pool1 = tf.nn.max_pool(conv1, ksize=[1, 1, 2, 2], strides=[1, 1, 2, 2], padding='SAME', data_format='NCHW')
+                self._activation_summary(pool1)
+            with tf.variable_scope('conv2'):
+                size = 3; channels = 16; filters = 32;  stride = 1
+                kernel = tf.get_variable('weights', [size, size, channels, filters], dtype=tf.float32,
+                                         initializer=tfc.layers.variance_scaling_initializer(uniform=True))
+                conv = tf.nn.conv2d(pool1, kernel, [1, 1, stride, stride], padding='SAME', data_format='NCHW')
+                bias = tf.get_variable('bias', [filters], dtype=tf.float32,
+                                       initializer=tf.constant_initializer(0.1))
+                pre_activations = tf.nn.bias_add(conv, bias, 'NCHW')
+                conv2 = tf.nn.relu(pre_activations)
+                self._activation_summary(conv2)
+            with tf.variable_scope('conv2_2'):
+                size = 3; channels = 32; filters = 32;  stride = 1
+                kernel = tf.get_variable('weights', [size, size, channels, filters], dtype=tf.float32,
+                                         initializer=tfc.layers.variance_scaling_initializer(uniform=True))
+                conv = tf.nn.conv2d(conv2, kernel, [1, 1, stride, stride], padding='SAME', data_format='NCHW')
+                bias = tf.get_variable('bias', [filters], dtype=tf.float32,
+                                       initializer=tf.constant_initializer(0.1))
+                pre_activations = tf.nn.bias_add(conv, bias, 'NCHW')
+                conv2_2 = tf.nn.relu(pre_activations)
+                self._activation_summary(conv2_2)
+            with tf.variable_scope('pool2'):
+                pool2 = tf.nn.max_pool(conv2_2, ksize=[1, 1, 2, 2], strides=[1, 1, 2, 2], padding='SAME', data_format='NCHW')
+                self._activation_summary(pool2)
+            with tf.variable_scope('conv3'):
+                size = 3; channels = 32; filters = 64;  stride = 1
+                kernel = tf.get_variable('weights', [size, size, channels, filters], dtype=tf.float32,
+                                         initializer=tfc.layers.variance_scaling_initializer(uniform=True))
+                conv = tf.nn.conv2d(pool2, kernel, [1, 1, stride, stride], padding='SAME', data_format='NCHW')
+                bias = tf.get_variable('bias', [filters], dtype=tf.float32,
+                                       initializer=tf.constant_initializer(0.1))
+                pre_activations = tf.nn.bias_add(conv, bias, 'NCHW')
+                conv3 = tf.nn.relu(pre_activations)
+                self._activation_summary(conv3)
+            with tf.variable_scope('conv3_2'):
+                size = 3; channels = 64; filters = 64;  stride = 1
+                kernel = tf.get_variable('weights', [size, size, channels, filters], dtype=tf.float32,
+                                         initializer=tfc.layers.variance_scaling_initializer(uniform=True))
+                conv = tf.nn.conv2d(conv3, kernel, [1, 1, stride, stride], padding='SAME', data_format='NCHW')
+                bias = tf.get_variable('bias', [filters], dtype=tf.float32,
+                                       initializer=tf.constant_initializer(0.1))
+                pre_activations = tf.nn.bias_add(conv, bias, 'NCHW')
+                conv3_2 = tf.nn.relu(pre_activations)
+                self._activation_summary(conv3_2)
+            with tf.variable_scope('pool3'):
+                pool3 = tf.nn.max_pool(conv3_2, ksize=[1, 1, 2, 2], strides=[1, 1, 2, 2], padding='SAME', data_format='NCHW')
+                self._activation_summary(pool3)
+            with tf.variable_scope('conv4'):
+                size = 3; channels = 64; filters = 128;  stride = 1
+                kernel = tf.get_variable('weights', [size, size, channels, filters], dtype=tf.float32,
+                                         initializer=tfc.layers.variance_scaling_initializer(uniform=True))
+                conv = tf.nn.conv2d(pool3, kernel, [1, 1, stride, stride], padding='SAME', data_format='NCHW')
+                bias = tf.get_variable('bias', [filters], dtype=tf.float32,
+                                       initializer=tf.constant_initializer(0.1))
+                pre_activations = tf.nn.bias_add(conv, bias, 'NCHW')
+                conv4 = tf.nn.relu(pre_activations)
+                self._activation_summary(conv4)
+            with tf.variable_scope('pool4'):
+                pool4 = tf.nn.max_pool(conv4, ksize=[1, 1, 2, 2], strides=[1, 1, 2, 2], padding='SAME', data_format='NCHW')
+                self._activation_summary(pool4)
+            pool4_shape = pool4.get_shape().as_list()
+            with tf.variable_scope('linear1'):
+                hiddens = 512 ; dim = pool4_shape[1] * pool4_shape[2] * pool4_shape[3]
+                reshape = tf.reshape(pool4, [-1, dim])
                 weights = tf.get_variable('weights', [dim, hiddens], tf.float32,
                                           initializer=tfc.layers.variance_scaling_initializer(uniform=True))
                 bias = tf.get_variable('bias', [hiddens], tf.float32,

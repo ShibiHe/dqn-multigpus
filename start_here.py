@@ -18,7 +18,7 @@ tf.app.flags.DEFINE_integer('epochs', 50, 'Number of training epochs')
 tf.app.flags.DEFINE_integer('steps_per_epoch', 250000, 'Number of steps per epoch')
 tf.app.flags.DEFINE_integer('test_length', 125000, 'Number of steps per test')
 tf.app.flags.DEFINE_integer('seed', 123456, 'random seed')
-tf.app.flags.DEFINE_integer('summary_fr', 2000, 'summary every x training steps')
+tf.app.flags.DEFINE_integer('summary_fr', 3000, 'summary every x training steps')
 tf.app.flags.DEFINE_string('logs_path', './logs', 'tensor board path')
 tf.app.flags.DEFINE_bool('curses', False, 'if use curses to show status')
 
@@ -29,8 +29,8 @@ tf.app.flags.DEFINE_integer('frame_skip', 4, 'every frame_skip frames to act')
 tf.app.flags.DEFINE_integer('buffer_length', 2, 'screen buffer size for one image')
 tf.app.flags.DEFINE_float('repeat_action_probability', 0, 'Probability that action choice will be ignored')
 tf.app.flags.DEFINE_float('input_scale', 255.0, 'image rescale')
-tf.app.flags.DEFINE_integer('input_width', 84, 'environment to agent image width')
-tf.app.flags.DEFINE_integer('input_height', 84, 'environment to agent image width')
+tf.app.flags.DEFINE_integer('input_width', 160, 'environment to agent image width')
+tf.app.flags.DEFINE_integer('input_height', 160, 'environment to agent image width')
 tf.app.flags.DEFINE_integer('num_actions', 2, 'environment accepts x actions')
 tf.app.flags.DEFINE_integer('max_start_no_op', 30, 'Maximum number of null_ops at the start')
 tf.app.flags.DEFINE_bool('lol_end', True, 'lost of life ends training episode')
@@ -44,7 +44,7 @@ tf.app.flags.DEFINE_float('ep_decay', 1000000, 'steps for epsilon reaching minim
 tf.app.flags.DEFINE_integer('phi_length', 4, 'frames for representing a state')
 tf.app.flags.DEFINE_integer('memory', 1000000, 'replay memory size')
 tf.app.flags.DEFINE_integer('batch', 32, 'training batch size')
-tf.app.flags.DEFINE_string('network', 'nature', 'neural network type')
+tf.app.flags.DEFINE_string('network', 'vgg', 'neural network type, linear, nature, vgg')
 tf.app.flags.DEFINE_integer('freeze', 2000, """freeze interval between updates, update network every x trainings. 
 To be noticed, Nature paper is inconsistent with its code.""")
 tf.app.flags.DEFINE_string('loss_func', 'huber', 'loss function: huber; quadratic')
@@ -61,8 +61,8 @@ tf.app.flags.DEFINE_string('gpu_config',
                            """{'gpu0': [0], 'gpu1': [1], 'gpu2': [2], 'gpu3': [3]}""",
                            'GPU configuration for agents, default gpu0')
 tf.app.flags.DEFINE_string('threads_specific_config',
-                           """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}, 2: {'rom': 'beam_rider'},
-                            3: {'rom': 'space_invaders'}}""",
+                           """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}, 2: {'rom': 'beam_rider'}, """
+                           """3: {'rom': 'space_invaders'}}""",
                            'configuration for each agent')
 
 
@@ -92,11 +92,18 @@ def initialize(pid, device, flags, message_queue):
     ale.setFloat('repeat_action_probability', flags.repeat_action_probability)
     ale.loadROM(full_rom_path)
     num_actions = len(ale.getMinimalActionSet())
+
+    # adjust flags
     flags.num_actions = num_actions
     flags.logs_path = os.path.join(flags.logs_path, '#' + str(pid) + '_' + flags.rom)
 
     # initialize agent
     network = neural_networks.DeepQNetwork(pid, flags, device)
+
+    setting_file = open(os.path.join(flags.logs_path, 'flags.txt'), mode='w+')
+    for key, item in flags.__flags.items():
+        setting_file.write(key + ' : ' + str(item) + '\n')
+
     agent = agents.QLearning(pid, network, flags, message_queue)
 
     interaction.Interaction(pid, ale, agent, flags, message_queue).start()
