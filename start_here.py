@@ -96,16 +96,18 @@ def initialize(pid, device, flags, message_queue):
     # adjust flags
     flags.num_actions = num_actions
     flags.logs_path = os.path.join(flags.logs_path, '#' + str(pid) + '_' + flags.rom)
+    tf.gfile.MakeDirs(flags.logs_path)
 
-    # initialize agent
-    network = neural_networks.DeepQNetwork(pid, flags, device)
-
+    # print settings
     setting_file = open(os.path.join(flags.logs_path, 'flags.txt'), mode='w+')
     for key, item in flags.__flags.items():
         setting_file.write(key + ' : ' + str(item) + '\n')
 
+    # initialize agent
+    network = neural_networks.DeepQNetwork(pid, flags, device)
+    setting_file.write(network.nn_structure_file)
+    setting_file.close()
     agent = agents.QLearning(pid, network, flags, message_queue)
-
     interaction.Interaction(pid, ale, agent, flags, message_queue).start()
 
 
@@ -161,7 +163,7 @@ def main(argv=None):
         processes.append(process)
 
     while any(p.is_alive() for p in processes):
-        time.sleep(5.0)
+        time.sleep(1.0)
         message_dict = {}
         while not message_queue.empty():
             """

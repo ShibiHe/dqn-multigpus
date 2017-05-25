@@ -10,3 +10,7 @@
 *.local
 
 *.ubuntu
+
+flags.txt
+
+test.txt
