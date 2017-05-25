@@ -65,6 +65,12 @@ tf.app.flags.DEFINE_string('threads_specific_config',
                            """3: {'rom': 'space_invaders'}}""",
                            'configuration for each agent')
 
+# optimality tightening
+tf.app.flags.DEFINE_bool('ot', False, 'optimality tightening')
+tf.app.flags.DEFINE_bool('close2', True, 'close bounds')
+tf.app.flags.DEFINE_integer('nob', 4, 'number of bounds')
+tf.app.flags.DEFINE_float('pw', 0.8, 'penalty weight')
+
 
 def initialize(pid, device, flags, message_queue):
     message = 'initialize process: {:d} with GPU: {} game: {}'.format(pid, device, flags.rom)
@@ -104,16 +110,24 @@ def initialize(pid, device, flags, message_queue):
         setting_file.write(key + ' : ' + str(item) + '\n')
 
     # initialize agent
-    network = neural_networks.DeepQNetwork(pid, flags, device)
+    if flags.ot:
+        network = neural_networks.OptimalityTighteningNetwork(pid, flags, device)
+    else:
+        network = neural_networks.DeepQNetwork(pid, flags, device)
+
     setting_file.write(network.nn_structure_file)
     setting_file.close()
-    agent = agents.QLearning(pid, network, flags, message_queue)
+
+    if flags.ot:
+        agent = agents.OptimalityTigheningAgent(pid, network, flags, message_queue)
+    else:
+        agent = agents.QLearning(pid, network, flags, message_queue)
     interaction.Interaction(pid, ale, agent, flags, message_queue).start()
 
 
 def display_threads(message_dict):
     if not FLAGS.curses:
-        one_line = '\r'
+        one_line = '\r\033[K'
         for pid, element in message_dict.items():
             if pid == -1:
                 print

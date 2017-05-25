@@ -89,9 +89,11 @@ class QLearning(object):
         else:
             self.train_data_set.add_sample(self.last_img, self.last_action, reward, True,
                                            start_index=self.start_index)
+
         """
-        update index not finished
+        post end episode functions
         """
+        self._post_end_episode(terminal)
 
         rho = 0.98
         self.steps_sec_ema = rho * self.steps_sec_ema + (1.0 - rho) * (self.step_counter / episode_time)
@@ -101,6 +103,9 @@ class QLearning(object):
         self.message_queue.put(message)
         if self.loss_averages:  # if not empty
             self.network.episode_summary(np.mean(self.loss_averages))
+
+    def _post_end_episode(self, x):
+        pass
 
     def choose_action(self, data_set, img, epsilon, reward_received):
         data_set.add_sample(self.last_img, self.last_action, reward_received, False, start_index=self.start_index)
@@ -174,3 +179,102 @@ class QLearning(object):
         self.network.epoch_summary(epoch, self.epoch_time, self.state_action_avg_val, self.total_reward,
                                    self.reward_per_episode)
         self.epoch_start_time = time.time()
+
+
+class OptimalityTigheningAgent(QLearning):
+    def __init__(self, pid, network, flags, message_queue):
+        super(OptimalityTigheningAgent, self).__init__(pid, network, flags, message_queue)
+        self.train_data_set = data_sets.OptimalityTighteningDataset(flags)
+
+    def _post_end_episode(self, terminal):
+        if self.testing:
+            return
+        if terminal:
+            q_return = 0.0
+        else:
+            phi = self.train_data_set.phi(self.last_img)
+            phi = np.expand_dims(phi, 0)
+            q_return = np.mean(self.network.get_action_values(phi))
+        self.start_index = self.train_data_set.top
+        self.terminal_index = index = (self.start_index - 1) % self.train_data_set.max_steps
+        while True:
+            q_return = q_return * self.flags.discount + self.train_data_set.rewards[index]
+            self.train_data_set.return_value[index] = q_return
+            self.train_data_set.terminal_index[index] = self.terminal_index
+            index = (index - 1) % self.train_data_set.max_steps
+            if self.train_data_set.terminal[index] or index == self.train_data_set.bottom:
+                break
+
+    def _train(self):
+        if self.flags.close2:
+            self.train_data_set.random_batch_with_close_bounds(self.flags.batch)
+        else:
+            pass
+        target_q_imgs = np.concatenate((self.train_data_set.forward_imgs, self.train_data_set.backward_imgs), axis=1)
+        target_q_imgs = np.reshape(target_q_imgs, (-1,) + target_q_imgs.shape[2:])
+        """here consider center image's target too as a lower bound"""
+        target_q_table = self.network.get_action_values_old(target_q_imgs)
+        target_q_table = np.reshape(target_q_table, (self.flags.batch, -1) + (target_q_table.shape[-1], ))
+
+        q_values = self.network.get_action_values_given_actions(self.train_data_set.center_imgs, self.train_data_set.center_actions)
+
+        states1 = np.zeros((self.flags.batch, self.flags.phi_length, self.flags.input_height, self.flags.input_width), dtype='uint8')
+        actions1 = np.zeros((self.flags.batch, ), dtype='int32')
+        targets1 = np.zeros((self.flags.batch, ), dtype='float32')
+        """
+            0 1 2 3* 4 5 6 7 8 V_R
+            0 1 2 4  5 6 7 8 V_R
+            V0 = r3 + y*Q4; V1 = r3 +y*r4 + y^2*Q5
+            Q2 -r2 = Q3*y; Q1 - r1 - y*r2  = y^2*Q3
+            V-1 = (Q2 - r2) / y; V-2 = (Q1 - r1 - y*r2)/y^2; V-3 = (Q0 -r0 -y*r1 - y^2*r2)/y^3
+            r1 + y*r2 = R1 - y^2*R3
+            Q1 = r1+y*r2 + y^2*Q3
+        """
+        for i in xrange(self.flags.batch):
+            q_value = q_values[i]
+            center_position = int(self.train_data_set.center_positions[i])
+            if self.train_data_set.terminal.take(center_position, mode='wrap'):
+                states1[i] = self.train_data_set.center_imgs[i]
+                actions1[i] = self.train_data_set.center_actions[i]
+                targets1[i] = self.train_data_set.center_return_values[i]
+                continue
+            forward_targets = np.zeros(self.flags.nob, dtype=np.float32)
+            backward_targets = np.zeros(self.flags.nob, dtype=np.float32)
+            for j in xrange(self.flags.nob):
+                if j > 0 and self.train_data_set.forward_positions[i, j] == center_position + 1:
+                    forward_targets[j] = q_value
+                else:
+                    forward_targets[j] = self.train_data_set.center_return_values[i] - \
+                                         self.train_data_set.forward_return_values[i, j] * \
+                                         self.train_data_set.forward_discounts[i, j] + \
+                                         self.train_data_set.forward_discounts[i, j] * \
+                                         np.max(target_q_table[i, j])
+
+                if self.train_data_set.backward_positions[i, j] == center_position + 1:
+                    backward_targets[j] = q_value
+                else:
+                    backward_targets[j] = (-self.train_data_set.backward_return_values[i, j] +
+                                           self.train_data_set.backward_discounts[i, j] *
+                                           self.train_data_set.center_return_values[i] +
+                                           target_q_table[i, self.flags.nob + j,
+                                                          self.train_data_set.backward_actions[i, j]]) / \
+                                          self.train_data_set.backward_discounts[i, j]
+
+            forward_targets = np.append(forward_targets, self.train_data_set.center_return_values[i])
+            v0 = v1 = forward_targets[0]
+            v_max = np.max(forward_targets[1:])
+            v_min = np.min(backward_targets)
+            if v_max - 0.1 > q_value > v_min + 0.1:
+                v1 = v_max * 0.5 + v_min * 0.5
+            elif v_max - 0.1 > q_value:
+                v1 = v_max
+            elif v_min + 0.1 < q_value:
+                v1 = v_min
+
+            states1[i] = self.train_data_set.center_imgs[i]
+            actions1[i] = self.train_data_set.center_actions[i]
+            targets1[i] = v0 * self.flags.pw + (1 - self.flags.pw) * v1
+
+        return self.network.train(states1, actions1, targets1)
+
+

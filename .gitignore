@@ -14,3 +14,7 @@
 flags.txt
 
 test.txt
+
+checkpoint
+
+*.ckpt*

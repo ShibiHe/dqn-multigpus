@@ -313,6 +313,48 @@ class DeepQNetwork(object):
         self.summary_writer.add_summary(summary, step)
 
 
+class OptimalityTighteningNetwork(DeepQNetwork):
+    def __init__(self, pid, flags, device):
+        super(OptimalityTighteningNetwork, self).__init__(pid, flags, device)
+
+    def _construct_training_graph(self):
+        with tf.variable_scope('q_s_a'):
+            self.actions = tf.placeholder(tf.int32, (None,), 'actions')
+            actions = tf.one_hot(self.actions, self.flags.num_actions, axis=-1, dtype=tf.float32)
+            self.q_s_a = tf.reduce_sum(self.action_values_given_state * actions, axis=1)
+        with tf.variable_scope('diff'):
+            self.targets = tf.placeholder(tf.float32, (None, ), 'targets')
+            diff = self.q_s_a - self.targets
+        with tf.name_scope('loss'):
+            loss = None
+            if self.flags.loss_func == 'quadratic':
+                loss = 0.5 * tf.square(diff)
+            if self.flags.loss_func == 'huber':
+                quad = tf.minimum(tf.abs(diff), 1.0)
+                linear = tf.abs(diff) - quad
+                loss = 0.5 * tf.square(quad) + linear
+            assert loss is not None
+            self.loss = tf.reduce_sum(loss)
+        self.grad_var_list = self.opt.compute_gradients(self.loss)
+        self.apply_gradients = self.opt.apply_gradients(self.grad_var_list, self.global_step)
+
+    def train(self, current_states, actions, targets, **kwargs):
+        _, loss, global_step = self.sess.run([self.apply_gradients, self.loss, self.global_step],
+                                             feed_dict={self.images: current_states,
+                                                        self.actions: actions,
+                                                        self.targets: targets})
+        if global_step % self.flags.summary_fr == 0:
+            summary = self.sess.run(self.training_summary_op, feed_dict={self.images: current_states,
+                                                                         self.actions: actions,
+                                                                         self.targets: targets})
+            self.summary_writer.add_summary(summary, global_step)
+        if global_step % self.flags.freeze == 0:
+            self.update_network()
+        return loss
+
+    def get_action_values_given_actions(self, states, actions):
+        return self.sess.run(self.q_s_a, feed_dict={self.images: states, self.actions: actions})
+
 if __name__ == '__main__':
     class AttrDict(dict):
         def __init__(self, *args, **kwargs):
