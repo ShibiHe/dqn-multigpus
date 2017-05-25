@@ -133,6 +133,8 @@ class DeepQNetwork(object):
         self.training_summary_op = tf.summary.merge(tf.get_collection('training_summaries'), name='training_summaries')
 
     def _activation_summary(self, x):
+        if 'old' in tf.get_variable_scope().name:
+            return
         tf.add_to_collection('training_summaries', tf.summary.histogram(x.name + '/activations', x))
         tf.add_to_collection('training_summaries', tf.summary.scalar(x.name + '/sparsity', tf.nn.zero_fraction(x)))
 
@@ -345,6 +347,8 @@ class OptimalityTighteningNetwork(DeepQNetwork):
                                                         self.targets: targets})
         if global_step % self.flags.summary_fr == 0:
             summary = self.sess.run(self.training_summary_op, feed_dict={self.images: current_states,
+                                                                         # only for image summary use
+                                                                         self.images_old: current_states,
                                                                          self.actions: actions,
                                                                          self.targets: targets})
             self.summary_writer.add_summary(summary, global_step)
