@@ -29,8 +29,8 @@ tf.app.flags.DEFINE_integer('frame_skip', 4, 'every frame_skip frames to act')
 tf.app.flags.DEFINE_integer('buffer_length', 2, 'screen buffer size for one image')
 tf.app.flags.DEFINE_float('repeat_action_probability', 0, 'Probability that action choice will be ignored')
 tf.app.flags.DEFINE_float('input_scale', 255.0, 'image rescale')
-tf.app.flags.DEFINE_integer('input_width', 160, 'environment to agent image width')
-tf.app.flags.DEFINE_integer('input_height', 160, 'environment to agent image width')
+tf.app.flags.DEFINE_integer('input_width', 128, 'environment to agent image width')
+tf.app.flags.DEFINE_integer('input_height', 128, 'environment to agent image width')
 tf.app.flags.DEFINE_integer('num_actions', 2, 'environment accepts x actions')
 tf.app.flags.DEFINE_integer('max_start_no_op', 30, 'Maximum number of null_ops at the start')
 tf.app.flags.DEFINE_bool('lol_end', True, 'lost of life ends training episode')
@@ -137,16 +137,17 @@ def display_threads(message_dict):
                 if 'step' in element:
                     total_steps = FLAGS.steps_per_epoch if element['step'][0] == 'TRAIN' else FLAGS.test_length
                     one_line += '  #{:d}:{} E{:d} {:.1f}% '.format(
-                        pid, element['step'][0], element['step'][1], (1.0 - float(element['step'][2])/total_steps) * 100)
+                        pid, element['step'][0], element['step'][1],
+                        (1.0 - float(element['step'][2]) / total_steps) * 100)
                 if 'speed' in element:
                     one_line += ' St/Sec: cur:{:d} avg:{:d} '.format(element['speed'][0], element['speed'][1])
         sys.stdout.write(one_line)
         sys.stdout.flush()
         return
-    # for id, element in message_dict.items():
-    #     if id == -1:
-    #         for message in element.get('print', []):
-    #             stdscr.addstr(print_line_number, 0, message)
+        # for id, element in message_dict.items():
+        #     if id == -1:
+        #         for message in element.get('print', []):
+        #             stdscr.addstr(print_line_number, 0, message)
 
 
 def main(argv=None):

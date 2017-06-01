@@ -226,7 +226,7 @@ class DeepQNetwork(object):
                 self._activation_summary(action_values)
         if network_type == 'vgg':
             with tf.variable_scope('conv1'):
-                size = 7; channels = channels; filters = 16; stride = 3
+                size = 7; channels = channels; filters = 16; stride = 4
                 conv1 = self._conv_layer(images, size, channels, filters, stride)
             with tf.variable_scope('conv1_2'):
                 size = 3; channels = 16; filters = 32; stride = 1
@@ -242,7 +242,7 @@ class DeepQNetwork(object):
             with tf.variable_scope('pool2'):
                 pool2 = self._pool_layer(conv2_2)
             with tf.variable_scope('conv3'):
-                size = 3; channels = 64; filters = 64;  stride = 1
+                size = 3; channels = 64; filters = 128;  stride = 1
                 conv3 = self._conv_layer(pool2, size, channels, filters, stride)
             with tf.variable_scope('pool3'):
                 pool3 = self._pool_layer(conv3)

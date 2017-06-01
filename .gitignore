@@ -18,3 +18,7 @@ test.txt
 checkpoint
 
 *.ckpt*
+
+*.peng-gpu-2
+
+*.pstat
