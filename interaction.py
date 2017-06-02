@@ -38,6 +38,7 @@ class Interaction(object):
                 self.agent.start_testing()
                 self.run_epoch(epoch, self.flags.test_length, True)
                 self.agent.finish_testing(epoch)
+        self.agent.finish_everything()
 
     def run_epoch(self, epoch, num_steps, testing=False):
         self.terminal_lol = False  # make sure reset env at the start of an epoch

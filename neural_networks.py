@@ -2,6 +2,7 @@ __author__ = 'frankhe'
 import tensorflow as tf
 import tensorflow.contrib as tfc
 import numpy as np
+import threading
 import os
 
 
@@ -10,25 +11,36 @@ class DeepQNetwork(object):
         self.pid = pid
         self.nn_structure_file = ''
         self.flags = flags
+        self.feeding_threads_num = flags.feeding_threads
+        self.feeding_threads = []
+        self.train_data_set = None
+        self.training_started = False
+
         if not flags.use_gpu:
             device = '/cpu:0'
         else:
             device = '/gpu:' + device
 
         with tf.device(device):
+            # global step
             self.global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0), trainable=False)
 
+            # feeding ops
+            self._construct_feeding_op()
+
             # inference graph-----------------------
-            with tf.variable_scope('current'):
+            with tf.variable_scope('current') as current_scope:
                 self.nn_structure_file += 'CURRENT:\n'
-                self.images = tf.placeholder(tf.float32, [None, flags.phi_length, flags.input_height, flags.input_width],
-                                             name='images')
                 self.action_values_given_state = self._inference(self.images)
-            with tf.variable_scope('old'):
+                current_scope.reuse_variables()
+                self.feed_action_values_given_state = self._inference(self.feed_images)
+                self._activation_summary(self.feed_action_values_given_state)
+            with tf.variable_scope('old') as old_scope:
                 self.nn_structure_file += 'OLD:\n'
-                self.images_old = tf.placeholder(tf.float32, [None, flags.phi_length, flags.input_height, flags.input_width],
-                                                 name='images')
                 self.action_values_given_state_old = self._inference(self.images_old)
+                old_scope.reuse_variables()
+                self.feed_action_values_given_state_old = self._inference(self.feed_images_old)
+                self._activation_summary(self.feed_action_values_given_state_old)
 
             # optimizer-----------------------------
             self._construct_optimizer()
@@ -50,6 +62,60 @@ class DeepQNetwork(object):
         self.sess.run(init)
         self.update_network()
         self.summary_writer = tf.summary.FileWriter(flags.logs_path, self.sess.graph)
+        self.coord = tf.train.Coordinator()
+
+    def _start_feeding_data(self):
+        for i in xrange(self.feeding_threads_num):
+            t = threading.Thread(target=self._feeding_thread_process, args=())
+            t.setDaemon(True)
+            self.feeding_threads.append(t)
+            t.start()
+
+    def stop_feeding(self):
+        self.coord.request_stop()
+        self.sess.run(self.q_close_op)
+        self.coord.join(self.feeding_threads, stop_grace_period_secs=1.0)
+        self.sess.close()
+
+    def _feeding_thread_process(self):
+        while not self.coord.should_stop():
+            imgs, actions, rewards, terminals = self.train_data_set.random_batch(self.flags.batch)
+            if self.coord.should_stop():
+                return
+            try:
+                self.sess.run(self.enqueue_op, feed_dict={self.images: imgs[:, :-1, ...],
+                                                          self.images_old: imgs[:, 1:, ...],
+                                                          self.actions: actions,
+                                                          self.rewards: rewards,
+                                                          self.terminals: terminals})
+            except tf.errors.CancelledError:
+                return
+
+    def _construct_feeding_op(self):
+        """self.images: current_states, self.images_old: target_states, 
+                    self.actions: actions, self.rewards: rewards, self.terminals: terminals}"""
+        with tf.name_scope('training_input'):
+            self.images = tf.placeholder(tf.float32,
+                                         [None, self.flags.phi_length, self.flags.input_height, self.flags.input_width],
+                                         name='images')
+            self.images_old = tf.placeholder(tf.float32,
+                                             [None, self.flags.phi_length, self.flags.input_height, self.flags.input_width],
+                                             name='images_old')
+            self.actions = tf.placeholder(tf.int32, [None])
+            self.rewards = tf.placeholder(tf.float32, [None])
+            self.terminals = tf.placeholder(tf.bool, [None])
+            self.queue = tf.FIFOQueue(capacity=self.flags.feeding_queue_size,
+                                      dtypes=[tf.float32, tf.float32, tf.int32, tf.float32, tf.bool])
+            self.enqueue_op = self.queue.enqueue([self.images, self.images_old, self.actions, self.rewards, self.terminals])
+            self.q_size_op = self.queue.size()
+            self.q_close_op = self.queue.close(cancel_pending_enqueues=True)
+            input_tensors = self.queue.dequeue()
+            self.feed_images, self.feed_images_old, self.feed_actions, self.feed_rewards, self.feed_terminals = input_tensors
+            self.feed_images.set_shape([self.flags.batch, self.flags.phi_length, self.flags.input_height, self.flags.input_width])
+            self.feed_images_old.set_shape([self.flags.batch, self.flags.phi_length, self.flags.input_height, self.flags.input_width])
+            self.feed_actions.set_shape([self.flags.batch])
+            self.feed_rewards.set_shape([self.flags.batch])
+            self.feed_terminals.set_shape([self.flags.batch])
 
     def _construct_optimizer(self):
         self.opt = None
@@ -60,17 +126,13 @@ class DeepQNetwork(object):
         assert self.opt is not None
 
     def _construct_training_graph(self):
-        with tf.name_scope('training_input'):
-            self.actions = tf.placeholder(tf.int32, (None,), 'actions')
-            self.rewards = tf.placeholder(tf.float32, (None,), 'rewards')
-            self.terminals = tf.placeholder(tf.bool, (None,), 'terminal')
         discount = tf.constant(self.flags.discount, tf.float32, [], 'discount', True)
         with tf.name_scope('diff'):
-            targets = self.rewards + (1.0 - tf.cast(self.terminals, tf.float32)) * discount * \
-                                     tf.reduce_max(self.action_values_given_state_old, axis=1)
+            targets = self.feed_rewards + (1.0 - tf.cast(self.feed_terminals, tf.float32)) * discount * \
+                                     tf.reduce_max(self.feed_action_values_given_state_old, axis=1)
             targets = tf.stop_gradient(targets)
-            actions = tf.one_hot(self.actions, self.flags.num_actions, axis=-1, dtype=tf.float32)
-            q_s_a = tf.reduce_sum(self.action_values_given_state * actions, axis=1)
+            actions = tf.one_hot(self.feed_actions, self.flags.num_actions, axis=-1, dtype=tf.float32)
+            q_s_a = tf.reduce_sum(self.feed_action_values_given_state * actions, axis=1)
             diff = q_s_a - targets
         with tf.name_scope('loss'):
             loss = None
@@ -110,9 +172,9 @@ class DeepQNetwork(object):
 
         # image summaries for current and target images
         tf.add_to_collection('training_summaries',
-                             tf.summary.image('current images', tf.expand_dims(self.images[0], -1), 4))
+                             tf.summary.image('current images', tf.expand_dims(self.feed_images[0], -1), 4))
         tf.add_to_collection('training_summaries',
-                             tf.summary.image('target images', tf.expand_dims(self.images_old[0], -1), 4))
+                             tf.summary.image('target images', tf.expand_dims(self.feed_images_old[0], -1), 4))
 
         # Add histograms for trainable variables under current scope
         for var in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'):
@@ -133,8 +195,6 @@ class DeepQNetwork(object):
         self.training_summary_op = tf.summary.merge(tf.get_collection('training_summaries'), name='training_summaries')
 
     def _activation_summary(self, x):
-        if 'old' in tf.get_variable_scope().name:
-            return
         tf.add_to_collection('training_summaries', tf.summary.histogram(x.name + '/activations', x))
         tf.add_to_collection('training_summaries', tf.summary.scalar(x.name + '/sparsity', tf.nn.zero_fraction(x)))
 
@@ -146,7 +206,7 @@ class DeepQNetwork(object):
                                initializer=tf.constant_initializer(0.1))
         pre_activations = tf.nn.bias_add(conv, bias, data_format=data_format)
         conv_out = tf.nn.relu(pre_activations)
-        self._activation_summary(conv_out)
+        # self._activation_summary(conv_out)
         s = "CONV In: {!s:20} Out: {!s:20} W: {!s:16} N_dim:{:8d}\tW_dim:{:8d}\n".format(
             conv_in.get_shape(), conv_out.get_shape(), kernel.get_shape(),
             reduce(lambda x, y: x * y, conv_in.get_shape().as_list()[1:]),
@@ -157,7 +217,7 @@ class DeepQNetwork(object):
     def _pool_layer(self, pool_in, size=2, stride=2):
         pool_out = tf.nn.max_pool(pool_in, ksize=[1, 1, size, size], strides=[1, 1, stride, stride],
                                   padding='SAME', data_format='NCHW')
-        self._activation_summary(pool_out)
+        # self._activation_summary(pool_out)
         s = "POOL In: {!s:20} Out: {!s:40} N_dim:{:8d}\n".format(
             pool_in.get_shape(), pool_out.get_shape(),
             reduce(lambda x, y: x * y, pool_in.get_shape().as_list()[1:]))
@@ -171,7 +231,7 @@ class DeepQNetwork(object):
                                initializer=tf.constant_initializer(0.1))
         pre_activations = tf.add(tf.matmul(linear_in, weights), bias)
         linear_out = tf.nn.relu(pre_activations)
-        self._activation_summary(linear_out)
+        # self._activation_summary(linear_out)
         s = "LINR In: {!s:20} Out: {!s:20} W: {!s:16} N_dim:{:8d}\tW_dim:{:8d}\n".format(
             linear_in.get_shape(), linear_out.get_shape(), weights.get_shape(),
             reduce(lambda x, y: x * y, linear_in.get_shape().as_list()[1:]),
@@ -204,7 +264,6 @@ class DeepQNetwork(object):
                 bias = tf.get_variable('bias', shape=(output_dim,), dtype=tf.float32,
                                        initializer=tf.constant_initializer(0.1))
                 action_values = tf.add(tf.matmul(images, weights), bias)
-                self._activation_summary(action_values)
         if network_type == 'nature':
             with tf.variable_scope('conv1'):
                 size = 8 ; channels = channels ; filters = 32 ; stride = 4
@@ -223,7 +282,6 @@ class DeepQNetwork(object):
             with tf.variable_scope('linear2'):
                 hiddens = output_dim ; dim = 512
                 action_values = self._linear_layer(linear1, dim, hiddens)
-                self._activation_summary(action_values)
         if network_type == 'vgg':
             with tf.variable_scope('conv1'):
                 size = 7; channels = channels; filters = 16; stride = 4
@@ -254,23 +312,19 @@ class DeepQNetwork(object):
             with tf.variable_scope('linear2'):
                 hiddens = output_dim ; dim = 512
                 action_values = self._linear_layer(linear1, dim, hiddens)
-                self._activation_summary(action_values)
         assert action_values is not None
         return action_values
 
-    def train(self, current_states, target_states, rewards, actions, terminals):
-        _, loss, global_step = self.sess.run([self.apply_gradients, self.loss, self.global_step],
-                                             feed_dict={self.images: current_states,
-                                                        self.images_old: target_states,
-                                                        self.actions: actions,
-                                                        self.rewards: rewards,
-                                                        self.terminals: terminals})
+    def add_train_data_set(self, data_set):
+        self.train_data_set = data_set
+
+    def train(self):
+        if not self.training_started:  # first time training
+            self._start_feeding_data()
+            self.training_started = True
+        _, loss, global_step = self.sess.run([self.apply_gradients, self.loss, self.global_step])
         if global_step % self.flags.summary_fr == 0:
-            summary = self.sess.run(self.training_summary_op, feed_dict={self.images: current_states,
-                                                                         self.images_old: target_states,
-                                                                         self.actions: actions,
-                                                                         self.rewards: rewards,
-                                                                         self.terminals: terminals})
+            summary = self.sess.run(self.training_summary_op)
             self.summary_writer.add_summary(summary, global_step)
         if global_step % self.flags.freeze == 0:
             self.update_network()

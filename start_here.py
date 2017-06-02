@@ -21,6 +21,8 @@ tf.app.flags.DEFINE_integer('seed', 123456, 'random seed')
 tf.app.flags.DEFINE_integer('summary_fr', 3000, 'summary every x training steps')
 tf.app.flags.DEFINE_string('logs_path', './logs', 'tensor board path')
 tf.app.flags.DEFINE_bool('curses', False, 'if use curses to show status')
+tf.app.flags.DEFINE_integer('feeding_threads', 2, 'feeding data threads')
+tf.app.flags.DEFINE_integer('feeding_queue_size', 150, 'feeding queue capacity')
 
 # ALE Environment settings
 tf.app.flags.DEFINE_string('rom', 'breakout', 'game ROM')
@@ -45,7 +47,7 @@ tf.app.flags.DEFINE_integer('phi_length', 4, 'frames for representing a state')
 tf.app.flags.DEFINE_integer('memory', 1000000, 'replay memory size')
 tf.app.flags.DEFINE_integer('batch', 32, 'training batch size')
 tf.app.flags.DEFINE_string('network', 'vgg', 'neural network type, linear, nature, vgg')
-tf.app.flags.DEFINE_integer('freeze', 2000, """freeze interval between updates, update network every x trainings. 
+tf.app.flags.DEFINE_integer('freeze', 2500, """freeze interval between updates, update network every x trainings. 
 To be noticed, Nature paper is inconsistent with its code.""")
 tf.app.flags.DEFINE_string('loss_func', 'huber', 'loss function: huber; quadratic')
 tf.app.flags.DEFINE_string('optimizer', 'adam', 'optimizer type')
@@ -190,9 +192,31 @@ def main(argv=None):
                 element[key] = message
             if key == 'print':
                 element.setdefault(key, []).append(message)
+            if key == 'END':
+                print '\n', pid, 'join'
+                processes[pid].join()
         if message_dict:  # not empty
             display_threads(message_dict)
 
 
+def one_thread():
+    if tf.gfile.Exists(FLAGS.logs_path):
+        tf.gfile.DeleteRecursively(FLAGS.logs_path)
+    pid_device = {}
+    d = eval(FLAGS.gpu_config)
+    for device, pids in d.items():
+        for pid in pids:
+            pid_device[pid] = device
+
+    class Q(object):
+        def put(self, *args):
+            print args
+    message_queue = Q()
+    flags = copy.deepcopy(FLAGS)
+    initialize(0, pid_device.get(0, "gpu0")[-1], flags, message_queue)
+
 if __name__ == '__main__':
     tf.app.run()
+    # one_thread()
+
+

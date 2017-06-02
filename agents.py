@@ -12,6 +12,7 @@ class QLearning(object):
         self.message_queue = message_queue
         self.train_data_set = data_sets.DataSet(flags)
         self.test_data_set = data_sets.DataSet(flags, max_steps=flags.phi_length * 2)
+        self.network.add_train_data_set(self.train_data_set)
         self.epsilon = flags.ep_st
         if flags.ep_decay != 0:
             self.epsilon_rate = (flags.ep_st - flags.ep_min) / flags.ep_decay
@@ -118,10 +119,7 @@ class QLearning(object):
         return action
 
     def _train(self):
-        imgs, actions, rewards, terminals = self.train_data_set.random_batch(self.flags.batch)
-        cur_images = imgs[:, :-1, ...]
-        target_images = imgs[:, 1:, ...]
-        return self.network.train(cur_images, target_images, rewards, actions, terminals)
+        return self.network.train()
 
     def step(self, reward, observation):
         """
@@ -179,6 +177,10 @@ class QLearning(object):
         self.network.epoch_summary(epoch, self.epoch_time, self.state_action_avg_val, self.total_reward,
                                    self.reward_per_episode)
         self.epoch_start_time = time.time()
+
+    def finish_everything(self):
+        self.network.stop_feeding()
+        self.message_queue.put([self.pid, 'END', ''])
 
 
 class OptimalityTigheningAgent(QLearning):
