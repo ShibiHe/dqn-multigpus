@@ -29,18 +29,7 @@ class DeepQNetwork(object):
             self._construct_feeding_op()
 
             # inference graph-----------------------
-            with tf.variable_scope('current') as current_scope:
-                self.nn_structure_file += 'CURRENT:\n'
-                self.action_values_given_state = self._inference(self.images)
-                current_scope.reuse_variables()
-                self.feed_action_values_given_state = self._inference(self.feed_images)
-                self._activation_summary(self.feed_action_values_given_state)
-            with tf.variable_scope('old') as old_scope:
-                self.nn_structure_file += 'OLD:\n'
-                self.action_values_given_state_old = self._inference(self.images_old)
-                old_scope.reuse_variables()
-                self.feed_action_values_given_state_old = self._inference(self.feed_images_old)
-                self._activation_summary(self.feed_action_values_given_state_old)
+            self._construct_inference()
 
             # optimizer-----------------------------
             self._construct_optimizer()
@@ -117,6 +106,20 @@ class DeepQNetwork(object):
             self.feed_rewards.set_shape([self.flags.batch])
             self.feed_terminals.set_shape([self.flags.batch])
 
+    def _construct_inference(self):
+        with tf.variable_scope('current') as current_scope:
+            self.nn_structure_file += 'CURRENT:\n'
+            self.action_values_given_state = self._inference(self.images)
+            current_scope.reuse_variables()
+            self.feed_action_values_given_state = self._inference(self.feed_images)
+            self._activation_summary(self.feed_action_values_given_state)
+        with tf.variable_scope('old') as old_scope:
+            self.nn_structure_file += 'OLD:\n'
+            self.action_values_given_state_old = self._inference(self.images_old)
+            old_scope.reuse_variables()
+            self.feed_action_values_given_state_old = self._inference(self.feed_images_old)
+            self._activation_summary(self.feed_action_values_given_state_old)
+
     def _construct_optimizer(self):
         self.opt = None
         if self.flags.optimizer == 'rmsprop':
@@ -171,10 +174,10 @@ class DeepQNetwork(object):
             tf.add_to_collection('summaries_per_episode', tf.summary.scalar('EPISODE_AVG_LOSS', self.episode_avg_loss))
 
         # image summaries for current and target images
-        tf.add_to_collection('training_summaries',
-                             tf.summary.image('current images', tf.expand_dims(self.feed_images[0], -1), 4))
-        tf.add_to_collection('training_summaries',
-                             tf.summary.image('target images', tf.expand_dims(self.feed_images_old[0], -1), 4))
+        # tf.add_to_collection('training_summaries',
+        #                      tf.summary.image('current images', tf.expand_dims(self.feed_images[0], -1), 4))
+        # tf.add_to_collection('training_summaries',
+        #                      tf.summary.image('target images', tf.expand_dims(self.feed_images_old[0], -1), 4))
 
         # Add histograms for trainable variables under current scope
         for var in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'):
@@ -373,14 +376,165 @@ class OptimalityTighteningNetwork(DeepQNetwork):
     def __init__(self, pid, flags, device):
         super(OptimalityTighteningNetwork, self).__init__(pid, flags, device)
 
+    def _construct_feeding_op(self):
+        """self.images: current_states, self.images_old: target_states, 
+                    self.actions: actions, self.rewards: rewards, self.terminals: terminals}"""
+        self.images = tf.placeholder(tf.float32,
+                                     [None, self.flags.phi_length, self.flags.input_height, self.flags.input_width],
+                                     name='images')
+        self.images_old = tf.placeholder(tf.float32,
+                                         [None, self.flags.phi_length, self.flags.input_height, self.flags.input_width],
+                                         name='images_old')
+        with tf.name_scope('training_input'):
+            self.center_positions = tf.placeholder(tf.int32, (None,))
+            self.center_terminals = tf.placeholder(tf.bool, (None,))
+            self.forward_positions = tf.placeholder(tf.int32, (None, self.flags.nob))
+            self.backward_positions = tf.placeholder(tf.int32, (None, self.flags.nob))
+            self.center_images = tf.placeholder(
+                tf.float32,
+                (None, self.flags.phi_length, self.flags.input_height, self.flags.input_width),
+                name='center_images')
+            self.forward_images = tf.placeholder(
+                tf.float32,
+                (None, self.flags.nob, self.flags.phi_length, self.flags.input_height, self.flags.input_width),
+                name='forward_images')
+            self.backward_images = tf.placeholder(
+                tf.float32,
+                (None, self.flags.nob, self.flags.phi_length, self.flags.input_height, self.flags.input_width),
+                name='backward_images')
+            self.center_actions = tf.placeholder(tf.int32, (None,))
+            self.backward_actions = tf.placeholder(tf.int32, (None, self.flags.nob))
+            self.center_return_values = tf.placeholder(tf.float32, (None,))
+            self.forward_return_values = tf.placeholder(tf.float32, (None, self.flags.nob))
+            self.backward_return_values = tf.placeholder(tf.float32, (None, self.flags.nob))
+            self.forward_discounts = tf.placeholder(tf.float32, (None, self.flags.nob))
+            self.backward_discounts = tf.placeholder(tf.float32, (None, self.flags.nob))
+
+            self.queue = tf.FIFOQueue(
+                capacity=self.flags.feeding_queue_size,
+                dtypes=[tf.int32, tf.bool, tf.int32, tf.int32, tf.float32, tf.float32, tf.float32, tf.int32, tf.int32,
+                        tf.float32, tf.float32, tf.float32, tf.float32, tf.float32])
+            self.enqueue_op = self.queue.enqueue(
+                [self.center_positions, self.center_terminals, self.forward_positions, self.backward_positions,
+                 self.center_images, self.forward_images, self.backward_images, self.center_actions,
+                 self.backward_actions, self.center_return_values, self.forward_return_values,
+                 self.backward_return_values, self.forward_discounts, self.backward_discounts])
+            self.q_size_op = self.queue.size()
+            self.q_close_op = self.queue.close(cancel_pending_enqueues=True)
+            input_tensors = self.queue.dequeue()
+            self.feed_center_positions, self.feed_center_terminals, self.feed_forward_positions,\
+                self.feed_backward_positions, self.feed_center_images, self.feed_forward_images,\
+                self.feed_backward_images, self.feed_center_actions, self.feed_backward_actions,\
+                self.feed_center_return_values, self.feed_forward_return_values, self.feed_backward_return_values,\
+                self.feed_forward_discounts, self.feed_backward_discounts = input_tensors
+
+            self.feed_center_positions.set_shape((self.flags.batch,))
+            self.feed_center_terminals.set_shape((self.flags.batch,))
+            self.feed_forward_positions.set_shape((self.flags.batch, self.flags.nob))
+            self.feed_backward_positions.set_shape((self.flags.batch, self.flags.nob))
+            self.feed_center_images.set_shape(
+                (self.flags.batch, self.flags.phi_length, self.flags.input_height, self.flags.input_width))
+            self.feed_forward_images.set_shape(
+                (self.flags.batch, self.flags.nob, self.flags.phi_length, self.flags.input_height,
+                 self.flags.input_width))
+            self.feed_backward_images.set_shape(
+                (self.flags.batch, self.flags.nob, self.flags.phi_length, self.flags.input_height,
+                 self.flags.input_width))
+            self.feed_center_actions.set_shape((self.flags.batch,))
+            self.feed_backward_actions.set_shape((self.flags.batch, self.flags.nob))
+            self.feed_center_return_values.set_shape((self.flags.batch,))
+            self.feed_forward_return_values.set_shape((self.flags.batch, self.flags.nob))
+            self.feed_backward_return_values.set_shape((self.flags.batch, self.flags.nob))
+            self.feed_forward_discounts.set_shape((self.flags.batch, self.flags.nob))
+            self.feed_backward_discounts.set_shape((self.flags.batch, self.flags.nob))
+
+    def _feeding_thread_process(self):
+        while not self.coord.should_stop():
+            if self.flags.close2:
+                self.train_data_set.random_batch_with_close_bounds(self.flags.batch)
+            else:
+                pass  # not close bounds
+            if self.coord.should_stop():
+                return
+            try:
+                self.sess.run(self.enqueue_op,
+                              feed_dict={self.center_positions: self.train_data_set.center_positions,
+                                         self.center_terminals: self.train_data_set.center_terminals,
+                                         self.forward_positions: self.train_data_set.forward_positions,
+                                         self.backward_positions: self.train_data_set.backward_positions,
+                                         self.center_images: self.train_data_set.center_imgs,
+                                         self.forward_images: self.train_data_set.forward_imgs,
+                                         self.backward_images: self.train_data_set.backward_imgs,
+                                         self.center_actions: self.train_data_set.center_actions,
+                                         self.backward_actions: self.train_data_set.backward_actions,
+                                         self.center_return_values: self.train_data_set.center_return_values,
+                                         self.forward_return_values: self.train_data_set.forward_return_values,
+                                         self.backward_return_values: self.train_data_set.backward_return_values,
+                                         self.forward_discounts: self.train_data_set.forward_discounts,
+                                         self.backward_discounts: self.train_data_set.backward_discounts})
+            except tf.errors.CancelledError:
+                return
+
+    def _construct_inference(self):
+        with tf.variable_scope('current') as current_scope:
+            self.nn_structure_file += 'CURRENT:\n'
+            self.action_values_given_state = self._inference(self.images)
+            current_scope.reuse_variables()
+            feed_q_s_a_values = self._inference(self.feed_center_images)
+            # feed_q_s_a_values: (N * A)
+            actions = tf.one_hot(self.feed_center_actions, self.flags.num_actions, axis=-1, dtype=tf.float32)
+            self.feed_q_values = tf.reduce_sum(feed_q_s_a_values * actions, axis=1)
+            # self.feed_q_values: (N,)
+
+        with tf.variable_scope('old') as old_scope:
+            self.nn_structure_file += 'OLD:\n'
+            self.action_values_given_state_old = self._inference(self.images_old)
+            old_scope.reuse_variables()
+            assert self.flags.one_bound
+            self.feed_target_q_table = self._inference(
+                tf.reshape(self.feed_forward_images, [-1] + self.feed_forward_images.get_shape().as_list()[2:]))
+            # feed_target_q_table: (N * nob, A)
+
     def _construct_training_graph(self):
-        with tf.variable_scope('q_s_a'):
-            self.actions = tf.placeholder(tf.int32, (None,), 'actions')
-            actions = tf.one_hot(self.actions, self.flags.num_actions, axis=-1, dtype=tf.float32)
-            self.q_s_a = tf.reduce_sum(self.action_values_given_state * actions, axis=1)
+        assert self.flags.one_bound
+        with tf.variable_scope('map_fn_input'):
+            input_tensor = tf.concat([
+                tf.reshape(self.feed_q_values, [self.flags.batch, -1]),  # N, 1
+                tf.cast(tf.reshape(self.feed_center_positions, (self.flags.batch, -1)), tf.float32),  # N, 1
+                tf.reshape(self.feed_center_return_values, (self.flags.batch, -1)),  # N, 1
+                tf.cast(tf.reshape(self.feed_center_terminals, (self.flags.batch, -1)), tf.float32),  # N, 1
+                tf.cast(tf.reshape(self.feed_forward_positions, (self.flags.batch, -1)), tf.float32),  # N, nob
+                tf.reshape(self.feed_forward_return_values, (self.flags.batch, -1)),  # N, nob
+                tf.reshape(self.feed_forward_discounts, (self.flags.batch, -1)),  # N, nob
+                tf.reshape(self.feed_target_q_table, [self.flags.batch, -1])  # N, nob * A
+            ], axis=1)
+
+        def train_body(x):
+            """
+            q_values[i]: x[0]; center_position: x[1]; center_return_values[i]: x[2]; center_terminals: x[3];
+            forward_return_values[i, j]: x[offset+nob: offset+2*nob]
+            forward_discounts[i, j]: x[offset + 2*nob: offset + 3*nob] """
+            offset = 4
+            def f1_terminal():
+                return x[2]
+            def f2_not_terminal():
+                forward_target_q_table = tf.reshape(x[offset + 3 * self.flags.nob:], [self.flags.nob, -1])  # nob * A
+                forward_target_q_table = tf.reduce_max(forward_target_q_table, axis=1)  # nob
+                forward_targets = x[2] - tf.multiply(x[offset + self.flags.nob: offset + 2 * self.flags.nob],
+                                                     x[offset + 2 * self.flags.nob: offset + 3 * self.flags.nob]) + \
+                                         tf.multiply(x[offset + 2 * self.flags.nob: offset + 3 * self.flags.nob],
+                                                     forward_target_q_table)
+                v0 = forward_targets[0]
+                v_max = tf.maximum(tf.reduce_max(forward_targets[1:]), x[2])
+                return tf.cond(tf.greater(v_max, x[0]),
+                               lambda: v0 * self.flags.pw + (1 - self.flags.pw) * v_max, lambda: v0)
+            return tf.cond(tf.cast(x[3], tf.bool), f1_terminal, f2_not_terminal)
+
+        with tf.variable_scope('targets'):
+            targets = tf.map_fn(train_body, input_tensor)
+            self.targets = tf.stop_gradient(targets)
         with tf.variable_scope('diff'):
-            self.targets = tf.placeholder(tf.float32, (None, ), 'targets')
-            diff = self.q_s_a - self.targets
+            diff = self.feed_q_values - self.targets
         with tf.name_scope('loss'):
             loss = None
             if self.flags.loss_func == 'quadratic':
@@ -393,25 +547,6 @@ class OptimalityTighteningNetwork(DeepQNetwork):
             self.loss = tf.reduce_sum(loss)
         self.grad_var_list = self.opt.compute_gradients(self.loss)
         self.apply_gradients = self.opt.apply_gradients(self.grad_var_list, self.global_step)
-
-    def train(self, current_states, actions, targets, **kwargs):
-        _, loss, global_step = self.sess.run([self.apply_gradients, self.loss, self.global_step],
-                                             feed_dict={self.images: current_states,
-                                                        self.actions: actions,
-                                                        self.targets: targets})
-        if global_step % self.flags.summary_fr == 0:
-            summary = self.sess.run(self.training_summary_op, feed_dict={self.images: current_states,
-                                                                         # only for image summary use
-                                                                         self.images_old: current_states,
-                                                                         self.actions: actions,
-                                                                         self.targets: targets})
-            self.summary_writer.add_summary(summary, global_step)
-        if global_step % self.flags.freeze == 0:
-            self.update_network()
-        return loss
-
-    def get_action_values_given_actions(self, states, actions):
-        return self.sess.run(self.q_s_a, feed_dict={self.images: states, self.actions: actions})
 
 if __name__ == '__main__':
     class AttrDict(dict):

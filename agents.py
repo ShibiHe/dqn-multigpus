@@ -187,6 +187,7 @@ class OptimalityTigheningAgent(QLearning):
     def __init__(self, pid, network, flags, message_queue):
         super(OptimalityTigheningAgent, self).__init__(pid, network, flags, message_queue)
         self.train_data_set = data_sets.OptimalityTighteningDataset(flags)
+        self.network.add_train_data_set(self.train_data_set)
 
     def _post_end_episode(self, terminal):
         if self.testing:
@@ -207,7 +208,7 @@ class OptimalityTigheningAgent(QLearning):
             if self.train_data_set.terminal[index] or index == self.train_data_set.bottom:
                 break
 
-    def _train(self):
+    def deprecated_train(self):
         if self.flags.close2:
             self.train_data_set.random_batch_with_close_bounds(self.flags.batch)
         else:

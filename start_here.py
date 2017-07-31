@@ -21,7 +21,7 @@ tf.app.flags.DEFINE_integer('seed', 123456, 'random seed')
 tf.app.flags.DEFINE_integer('summary_fr', 3000, 'summary every x training steps')
 tf.app.flags.DEFINE_string('logs_path', './logs', 'tensor board path')
 tf.app.flags.DEFINE_bool('curses', False, 'if use curses to show status')
-tf.app.flags.DEFINE_integer('feeding_threads', 2, 'feeding data threads')
+tf.app.flags.DEFINE_integer('feeding_threads', 1, 'feeding data threads')
 tf.app.flags.DEFINE_integer('feeding_queue_size', 150, 'feeding queue capacity')
 
 # ALE Environment settings
@@ -31,8 +31,8 @@ tf.app.flags.DEFINE_integer('frame_skip', 4, 'every frame_skip frames to act')
 tf.app.flags.DEFINE_integer('buffer_length', 2, 'screen buffer size for one image')
 tf.app.flags.DEFINE_float('repeat_action_probability', 0, 'Probability that action choice will be ignored')
 tf.app.flags.DEFINE_float('input_scale', 255.0, 'image rescale')
-tf.app.flags.DEFINE_integer('input_width', 128, 'environment to agent image width')
-tf.app.flags.DEFINE_integer('input_height', 128, 'environment to agent image width')
+tf.app.flags.DEFINE_integer('input_width', 84, 'environment to agent image width')  # 128 vgg
+tf.app.flags.DEFINE_integer('input_height', 84, 'environment to agent image width')
 tf.app.flags.DEFINE_integer('num_actions', 2, 'environment accepts x actions')
 tf.app.flags.DEFINE_integer('max_start_no_op', 30, 'Maximum number of null_ops at the start')
 tf.app.flags.DEFINE_bool('lol_end', True, 'lost of life ends training episode')
@@ -46,7 +46,7 @@ tf.app.flags.DEFINE_float('ep_decay', 1000000, 'steps for epsilon reaching minim
 tf.app.flags.DEFINE_integer('phi_length', 4, 'frames for representing a state')
 tf.app.flags.DEFINE_integer('memory', 1000000, 'replay memory size')
 tf.app.flags.DEFINE_integer('batch', 32, 'training batch size')
-tf.app.flags.DEFINE_string('network', 'vgg', 'neural network type, linear, nature, vgg')
+tf.app.flags.DEFINE_string('network', 'nature', 'neural network type, linear, nature, vgg')
 tf.app.flags.DEFINE_integer('freeze', 2500, """freeze interval between updates, update network every x trainings. 
 To be noticed, Nature paper is inconsistent with its code.""")
 tf.app.flags.DEFINE_string('loss_func', 'huber', 'loss function: huber; quadratic')
@@ -70,6 +70,7 @@ tf.app.flags.DEFINE_string('threads_specific_config',
 # optimality tightening
 tf.app.flags.DEFINE_bool('ot', False, 'optimality tightening')
 tf.app.flags.DEFINE_bool('close2', True, 'close bounds')
+tf.app.flags.DEFINE_bool('one_bound', True, 'only use lower bounds')
 tf.app.flags.DEFINE_integer('nob', 4, 'number of bounds')
 tf.app.flags.DEFINE_float('pw', 0.8, 'penalty weight')
 
@@ -127,8 +128,8 @@ def initialize(pid, device, flags, message_queue):
     interaction.Interaction(pid, ale, agent, flags, message_queue).start()
 
 
-def display_threads(message_dict):
-    if not FLAGS.curses:
+def display_threads(message_dict, flags=FLAGS):
+    if not flags.curses:
         one_line = '\r\033[K'
         for pid, element in message_dict.items():
             if pid == -1:
@@ -137,7 +138,7 @@ def display_threads(message_dict):
                     print message
             else:
                 if 'step' in element:
-                    total_steps = FLAGS.steps_per_epoch if element['step'][0] == 'TRAIN' else FLAGS.test_length
+                    total_steps = flags.steps_per_epoch if element['step'][0] == 'TRAIN' else flags.test_length
                     one_line += '  #{:d}:{} E{:d} {:.1f}% '.format(
                         pid, element['step'][0], element['step'][1],
                         (1.0 - float(element['step'][2]) / total_steps) * 100)
@@ -208,12 +209,38 @@ def one_thread():
         for pid in pids:
             pid_device[pid] = device
 
-    class Q(object):
-        def put(self, *args):
-            print args
-    message_queue = Q()
+    message_queue = mp.Queue()
+
     flags = copy.deepcopy(FLAGS)
-    initialize(0, pid_device.get(0, "gpu0")[-1], flags, message_queue)
+    flags.epochs = 2
+    flags.steps_per_epoch = 10000
+    flags.test_length = 2000
+    flags.summary_fr = 100
+    flags.network = 'linear'
+    flags.train_st = 2000
+    flags.ot = False
+    process = mp.Process(target=initialize, args=(0, pid_device.get(0, "gpu0")[-1], flags, message_queue))
+    process.daemon = True
+    process.start()
+
+    while process.is_alive():
+        time.sleep(1.0)
+        message_dict = {}
+        while not message_queue.empty():
+            """
+            {pid: {'step': [,,], 'speed': [,]}, -1: {'print': [m1, m2, ...]}}
+            """
+            pid, key, message = message_queue.get()
+            element = message_dict.setdefault(pid, {})
+            if key == 'step' or key == 'speed':
+                element[key] = message
+            if key == 'print':
+                element.setdefault(key, []).append(message)
+            if key == 'END':
+                print '\n', pid, 'join'
+                process.join()
+        if message_dict:  # not empty
+            display_threads(message_dict, flags)
 
 if __name__ == '__main__':
     tf.app.run()
