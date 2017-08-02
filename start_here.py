@@ -218,7 +218,8 @@ def one_thread():
     flags.summary_fr = 100
     flags.network = 'linear'
     flags.train_st = 2000
-    flags.ot = False
+    flags.ot = True
+    flags.one_bound = True
     process = mp.Process(target=initialize, args=(0, pid_device.get(0, "gpu0")[-1], flags, message_queue))
     process.daemon = True
     process.start()

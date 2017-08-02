@@ -250,8 +250,8 @@ class DeepQNetwork(object):
         channels = self.flags.phi_length
         """
         images batch * channels * height * width
-        :param input_width: 84 or 160
-        :param input_height: 84 or 160
+        :param input_width: 84 or 128 160
+        :param input_height: 84 or 128 160
         :param output_dim: num_actions
         :param channels: phi_length
         :return: inference layer
@@ -490,45 +490,98 @@ class OptimalityTighteningNetwork(DeepQNetwork):
             self.nn_structure_file += 'OLD:\n'
             self.action_values_given_state_old = self._inference(self.images_old)
             old_scope.reuse_variables()
-            assert self.flags.one_bound
-            self.feed_target_q_table = self._inference(
-                tf.reshape(self.feed_forward_images, [-1] + self.feed_forward_images.get_shape().as_list()[2:]))
-            # feed_target_q_table: (N * nob, A)
+            if self.flags.one_bound:
+                self.feed_target_q_table = self._inference(
+                    tf.reshape(self.feed_forward_images, [-1] + self.feed_forward_images.get_shape().as_list()[2:]))
+                # feed_target_q_table: (N * nob, A)
+            else:
+                target_q_images = tf.concat([self.feed_forward_images, self.feed_backward_images], axis=1)  # N,2nob,4HW
+                target_q_images = tf.reshape(target_q_images, [-1] + target_q_images.get_shape().as_list()[2:])
+                self.feed_target_q_table = self._inference(target_q_images)  # N*2nob, A
 
     def _construct_training_graph(self):
-        assert self.flags.one_bound
         with tf.variable_scope('map_fn_input'):
             input_tensor = tf.concat([
                 tf.reshape(self.feed_q_values, [self.flags.batch, -1]),  # N, 1
                 tf.cast(tf.reshape(self.feed_center_positions, (self.flags.batch, -1)), tf.float32),  # N, 1
                 tf.reshape(self.feed_center_return_values, (self.flags.batch, -1)),  # N, 1
                 tf.cast(tf.reshape(self.feed_center_terminals, (self.flags.batch, -1)), tf.float32),  # N, 1
-                tf.cast(tf.reshape(self.feed_forward_positions, (self.flags.batch, -1)), tf.float32),  # N, nob
+                tf.cast(tf.reshape(self.feed_backward_actions, [self.flags.batch, -1]), tf.float32),  # N, 1
+                tf.cast(tf.reshape(self.feed_backward_positions, (self.flags.batch, -1)), tf.float32),  # N, nob
                 tf.reshape(self.feed_forward_return_values, (self.flags.batch, -1)),  # N, nob
                 tf.reshape(self.feed_forward_discounts, (self.flags.batch, -1)),  # N, nob
-                tf.reshape(self.feed_target_q_table, [self.flags.batch, -1])  # N, nob * A
+                tf.reshape(self.feed_backward_return_values, (self.flags.batch, -1)),  # N, nob
+                tf.reshape(self.feed_backward_discounts, (self.flags.batch, -1)),  # N, nob
+                tf.reshape(self.feed_target_q_table, [self.flags.batch, -1])  # N, nob * A or N, 2*nob*A
             ], axis=1)
 
         def train_body(x):
             """
             q_values[i]: x[0]; center_position: x[1]; center_return_values[i]: x[2]; center_terminals: x[3];
-            forward_return_values[i, j]: x[offset+nob: offset+2*nob]
-            forward_discounts[i, j]: x[offset + 2*nob: offset + 3*nob] """
+            backward_actions[i, j]: x[offset: offset + nob]
+            backward_positions[i, j]: x[offset + nob: offset + 2*nob]
+            forward_return_values[i, j]: x[offset + 2 * nob: offset+ 3 * nob]
+            forward_discounts[i, j]: x[offset + 3 * nob: offset + 4 * nob]
+            backward_return_values[i, j]: x[offset + 4 * nob: offset + 5 * nob]
+            backward_discounts[i, j]: x[offset + 5 * nob: offset + 6 * nob]
+            target_q_table x[offset + 6 * nob:]
+            """
             offset = 4
+
             def f1_terminal():
                 return x[2]
-            def f2_not_terminal():
-                forward_target_q_table = tf.reshape(x[offset + 3 * self.flags.nob:], [self.flags.nob, -1])  # nob * A
+
+            def f2_not_terminal_two_bounds():
+                forward_target_q_table = tf.reshape(
+                    x[offset + 6 * self.flags.nob: offset + 6 * self.flags.nob + self.flags.num_actions * self.flags.nob],
+                    [self.flags.nob, -1])  # nob, A
+                backward_target_q_table = tf.reshape(
+                    x[offset + 6 * self.flags.nob + self.flags.num_actions * self.flags.nob:],
+                    [self.flags.nob, -1])  # nob, A
+
                 forward_target_q_table = tf.reduce_max(forward_target_q_table, axis=1)  # nob
-                forward_targets = x[2] - tf.multiply(x[offset + self.flags.nob: offset + 2 * self.flags.nob],
-                                                     x[offset + 2 * self.flags.nob: offset + 3 * self.flags.nob]) + \
-                                         tf.multiply(x[offset + 2 * self.flags.nob: offset + 3 * self.flags.nob],
+                backward_actions = tf.one_hot(tf.cast(x[offset: offset + self.flags.nob], tf.int32),
+                                              depth=self.flags.num_actions, axis=-1, dtype=tf.float32)
+                backward_target_q_table = tf.reduce_sum(backward_target_q_table * backward_actions, axis=1)  # nob
+
+                forward_targets = x[2] - tf.multiply(x[offset + 2 * self.flags.nob: offset + 3 * self.flags.nob],
+                                                     x[offset + 3 * self.flags.nob: offset + 4 * self.flags.nob]) + \
+                                         tf.multiply(x[offset + 3 * self.flags.nob: offset + 4 * self.flags.nob],
+                                                     forward_target_q_table)
+                backward_targets = tf.divide(-x[offset + 4 * self.flags.nob: offset + 5 * self.flags.nob] +
+                                             tf.multiply(x[offset + 5 * self.flags.nob: offset + 6 * self.flags.nob],
+                                                         x[2]) + backward_target_q_table,
+                                             x[offset + 5 * self.flags.nob: offset + 6 * self.flags.nob])
+                backward_mask = tf.cast(tf.equal(x[offset + self.flags.nob: offset + 2 * self.flags.nob], x[1] + 1),
+                                        tf.float32)
+                backward_targets = backward_mask * x[0] + (1 - backward_mask) * backward_targets
+
+                v0 = forward_targets[0]
+                v_max = tf.maximum(tf.reduce_max(forward_targets[1:]), x[2])
+                v_min = tf.reduce_min(backward_targets)
+
+                v1 = tf.case({
+                    tf.logical_and(tf.greater(x[0], v_min), tf.less(x[0], v_max)): lambda: (v_max + v_min) * 0.5,
+                    tf.greater(v_max, x[0]): lambda: v_max,
+                    tf.less(v_min, x[0]): lambda: v_min},
+                    default=lambda: v0)
+                return v0 * self.flags.pw + (1 - self.flags.pw) * v1
+
+            def f2_not_terminal_one_bound():
+                forward_target_q_table = tf.reshape(
+                    x[offset + 6 * self.flags.nob: offset + 6 * self.flags.nob + self.flags.num_actions * self.flags.nob],
+                    [self.flags.nob, -1])  # nob, A
+                forward_target_q_table = tf.reduce_max(forward_target_q_table, axis=1)  # nob
+                forward_targets = x[2] - tf.multiply(x[offset + 2 * self.flags.nob: offset + 3 * self.flags.nob],
+                                                     x[offset + 3 * self.flags.nob: offset + 4 * self.flags.nob]) + \
+                                         tf.multiply(x[offset + 3 * self.flags.nob: offset + 4 * self.flags.nob],
                                                      forward_target_q_table)
                 v0 = forward_targets[0]
                 v_max = tf.maximum(tf.reduce_max(forward_targets[1:]), x[2])
                 return tf.cond(tf.greater(v_max, x[0]),
                                lambda: v0 * self.flags.pw + (1 - self.flags.pw) * v_max, lambda: v0)
-            return tf.cond(tf.cast(x[3], tf.bool), f1_terminal, f2_not_terminal)
+            return tf.cond(tf.cast(x[3], tf.bool), f1_terminal,
+                           f2_not_terminal_one_bound if self.flags.one_bound else f2_not_terminal_two_bounds)
 
         with tf.variable_scope('targets'):
             targets = tf.map_fn(train_body, input_tensor)
