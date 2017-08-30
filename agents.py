@@ -5,11 +5,11 @@ import data_sets
 
 
 class QLearning(object):
-    def __init__(self, pid, network, flags, message_queue):
+    def __init__(self, pid, network, flags, comm):
         self.pid = pid
         self.network = network
         self.flags = flags
-        self.message_queue = message_queue
+        self.comm = comm
         self.train_data_set = data_sets.DataSet(flags)
         self.test_data_set = data_sets.DataSet(flags, max_steps=flags.phi_length * 2)
         self.network.add_train_data_set(self.train_data_set)
@@ -101,7 +101,7 @@ class QLearning(object):
         # print 'PID:', self.pid, 'steps/second current:{:.2f}, avg:{:.2f}'.format(self.step_counter/episode_time,
         #                                                                          self.steps_sec_ema)
         message = [self.pid, 'speed', [int(self.step_counter / episode_time), int(self.steps_sec_ema)]]
-        self.message_queue.put(message)
+        self.comm.send(message, dest=self.flags.threads)
         if self.loss_averages:  # if not empty
             self.network.episode_summary(np.mean(self.loss_averages))
 
@@ -151,7 +151,8 @@ class QLearning(object):
 
     def finish_epoch(self, epoch):
         # save model epoch parameters
-        self.network.epoch_model_save(epoch)
+        if self.flags.ckpt:
+            self.network.epoch_model_save(epoch)
         current_time = time.time()
         self.epoch_time = current_time - self.epoch_start_time
 
@@ -173,19 +174,19 @@ class QLearning(object):
         #     'mean q:', self.state_action_avg_val
         message = 'PID:{:d}  epoch:{:d}  total_reward={:.1f}  reward_per_episode={:.1f}     mean q={:.1f}'.format(
             self.pid, epoch, self.total_reward, self.reward_per_episode, self.state_action_avg_val)
-        self.message_queue.put([-1, 'print', message])
+        self.comm.send([-1, 'print', message], dest=self.flags.threads)
         self.network.epoch_summary(epoch, self.epoch_time, self.state_action_avg_val, self.total_reward,
                                    self.reward_per_episode)
         self.epoch_start_time = time.time()
 
     def finish_everything(self):
         self.network.stop_feeding()
-        self.message_queue.put([self.pid, 'END', ''])
+        self.comm.send([self.pid, 'END', ''], dest=self.flags.threads)
 
 
 class OptimalityTigheningAgent(QLearning):
-    def __init__(self, pid, network, flags, message_queue):
-        super(OptimalityTigheningAgent, self).__init__(pid, network, flags, message_queue)
+    def __init__(self, pid, network, flags, comm):
+        super(OptimalityTigheningAgent, self).__init__(pid, network, flags, comm)
         self.train_data_set = data_sets.OptimalityTighteningDataset(flags)
         self.network.add_train_data_set(self.train_data_set)
 
