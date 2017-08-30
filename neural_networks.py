@@ -1,13 +1,14 @@
 __author__ = 'frankhe'
 import tensorflow as tf
 import tensorflow.contrib as tfc
+import tensorflow.contrib.distributions as tcd
 import numpy as np
 import threading
 import os
 
 
 class DeepQNetwork(object):
-    def __init__(self, pid, flags, device):
+    def __init__(self, pid, flags, device, share_comm):
         self.pid = pid
         self.nn_structure_file = ''
         self.flags = flags
@@ -15,6 +16,7 @@ class DeepQNetwork(object):
         self.feeding_threads = []
         self.train_data_set = None
         self.training_started = False
+        self.share_comm = share_comm
 
         if not flags.use_gpu:
             device = '/cpu:0'
@@ -49,7 +51,7 @@ class DeepQNetwork(object):
         self.saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'))
         self.sess = tf.Session(config=config)
         self.sess.run(init)
-        self.update_network()
+        self.update_network(update_all_q=True)
         self.summary_writer = tf.summary.FileWriter(flags.logs_path, self.sess.graph)
         self.coord = tf.train.Coordinator()
 
@@ -113,12 +115,19 @@ class DeepQNetwork(object):
             current_scope.reuse_variables()
             self.feed_action_values_given_state = self._inference(self.feed_images)
             self._activation_summary(self.feed_action_values_given_state)
-        with tf.variable_scope('old') as old_scope:
-            self.nn_structure_file += 'OLD:\n'
-            self.action_values_given_state_old = self._inference(self.images_old)
-            old_scope.reuse_variables()
-            self.feed_action_values_given_state_old = self._inference(self.feed_images_old)
-            self._activation_summary(self.feed_action_values_given_state_old)
+        # with tf.variable_scope('old') as old_scope:
+        #     self.nn_structure_file += 'OLD:\n'
+        #     self.action_values_given_state_old = self._inference(self.images_old)
+        #     old_scope.reuse_variables()
+        #     self.feed_action_values_given_state_old = self._inference(self.feed_images_old)
+        self.action_values_given_state_old = []
+        self.feed_action_values_given_state_old = []
+        for i in xrange(self.flags.threads):
+            with tf.variable_scope('old' + str(i)) as old_scope:
+                self.nn_structure_file += 'OLD' + str(i) + ':\n'
+                self.action_values_given_state_old.append(self._inference(self.images_old))
+                old_scope.reuse_variables()
+                self.feed_action_values_given_state_old.append(self._inference(self.feed_images_old))
 
     def _construct_optimizer(self):
         self.opt = None
@@ -130,9 +139,13 @@ class DeepQNetwork(object):
 
     def _construct_training_graph(self):
         discount = tf.constant(self.flags.discount, tf.float32, [], 'discount', True)
+        with tf.name_scope('distribution'):
+            # shape= (threads, batch, actions)
+            stacks_action_values_given_state_old = tf.stack(self.feed_action_values_given_state_old)
+            final_action_values_given_state_old = tcd.percentile(stacks_action_values_given_state_old, 75, axis=0)
         with tf.name_scope('diff'):
             targets = self.feed_rewards + (1.0 - tf.cast(self.feed_terminals, tf.float32)) * discount * \
-                                     tf.reduce_max(self.feed_action_values_given_state_old, axis=1)
+                                     tf.reduce_max(final_action_values_given_state_old, axis=1)
             targets = tf.stop_gradient(targets)
             actions = tf.one_hot(self.feed_actions, self.flags.num_actions, axis=-1, dtype=tf.float32)
             q_s_a = tf.reduce_sum(self.feed_action_values_given_state * actions, axis=1)
@@ -151,13 +164,34 @@ class DeepQNetwork(object):
         self.apply_gradients = self.opt.apply_gradients(self.grad_var_list, self.global_step)
 
     def _construct_copy_op(self):
-        with tf.name_scope('copy'):
+        with tf.name_scope('copy4old'):
             assign_ops = []
             for (cur, old) in zip(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'),
-                                tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='old')):
-                assert cur.name[7:] == old.name[3:]
+                                tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='old' + str(self.pid))):
+                assert cur.name[cur.name.rfind('/')+1:] == old.name[old.name.rfind('/')+1:]
                 assign_ops.append(tf.assign(old, cur))
             self.copy_cur2old_op = tf.group(*assign_ops)
+
+        # receive buffer for MPI
+        self.recv_buf_list = []
+        for v in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'):
+            self.recv_buf_list.append(np.empty([self.flags.threads] + v.get_shape().as_list(), dtype=np.float32))
+
+        # create placeholders for assign variable op
+        with tf.name_scope('copy4all'):
+            self.assign_variable_placeholders = []
+            for var in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'):
+                self.assign_variable_placeholders.append(tf.placeholder(tf.float32, shape=var.get_shape().as_list()))
+
+            self.assign_old_variables_ops_group = []
+            for i_p in xrange(self.flags.threads):
+                assign_ops = []
+                for i_v, var in enumerate(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='old' + str(i_p))):
+                    assign_ops.append(tf.assign(var, self.assign_variable_placeholders[i_v]))
+                i_p_assign = tf.group(*assign_ops)
+                self.assign_old_variables_ops_group.append(i_p_assign)
+
+            assert len(self.assign_old_variables_ops_group) == self.flags.threads
 
     def _construct_summary_ops(self):
         # summaries of testing and global values
@@ -333,14 +367,28 @@ class DeepQNetwork(object):
             self.update_network()
         return loss
 
-    def update_network(self):
-        self.sess.run(self.copy_cur2old_op)
+    def update_network(self, update_all_q=True):
+        if not update_all_q:
+            self.sess.run(self.copy_cur2old_op)
+        else:
+            parameters = self.sess.run(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'))
+            for i in xrange(len(parameters)):
+                sendbuf = parameters[i]
+                self.share_comm.Allgather(sendbuf, self.recv_buf_list[i])
+                # print str(self.pid) + '|' + str(np.sum(parameters[i] - self.recv_buf_list[i][self.pid, :]))
+            for i_p in xrange(self.flags.threads):
+                feed_dict = {}
+                for i_v in xrange(len(parameters)):
+                    feed_dict[self.assign_variable_placeholders[i_v]] = self.recv_buf_list[i_v][i_p, ...]
+                self.sess.run(self.assign_old_variables_ops_group[i_p], feed_dict=feed_dict)
 
     def get_action_values(self, states):
         return self.sess.run(self.action_values_given_state, feed_dict={self.images: states})
 
-    def get_action_values_old(self, states):
-        return self.sess.run(self.action_values_given_state_old, feed_dict={self.images_old: states})
+    def get_action_values_old(self, states, q_old_number=None):
+        if q_old_number is None:
+            q_old_number = self.pid
+        return self.sess.run(self.action_values_given_state_old[q_old_number], feed_dict={self.images_old: states})
 
     def choose_action(self, phi):
         phi = np.expand_dims(phi, axis=0)
@@ -373,8 +421,8 @@ class DeepQNetwork(object):
 
 
 class OptimalityTighteningNetwork(DeepQNetwork):
-    def __init__(self, pid, flags, device):
-        super(OptimalityTighteningNetwork, self).__init__(pid, flags, device)
+    def __init__(self, pid, flags, device, share_comm):
+        super(OptimalityTighteningNetwork, self).__init__(pid, flags, device, share_comm)
 
     def _construct_feeding_op(self):
         """self.images: current_states, self.images_old: target_states, 

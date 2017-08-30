@@ -1,6 +1,4 @@
 __author__ = 'frankhe'
-
-import time
 import sys
 import tensorflow as tf
 import numpy as np
@@ -23,7 +21,7 @@ tf.app.flags.DEFINE_string('logs_path', './logs', 'tensor board path')
 tf.app.flags.DEFINE_bool('test', False, 'enable test mode')
 tf.app.flags.DEFINE_bool('ckpt', False, 'enable save models')
 tf.app.flags.DEFINE_integer('feeding_threads', 1, 'feeding data threads')
-tf.app.flags.DEFINE_integer('feeding_queue_size', 150, 'feeding queue capacity')
+tf.app.flags.DEFINE_integer('feeding_queue_size', 50, 'feeding queue capacity')
 
 # ALE Environment settings
 tf.app.flags.DEFINE_string('rom', 'breakout', 'game ROM')
@@ -75,7 +73,7 @@ tf.app.flags.DEFINE_integer('nob', 4, 'number of bounds')
 tf.app.flags.DEFINE_float('pw', 0.8, 'penalty weight')
 
 
-def initialize(pid, device, flags, comm):
+def initialize(pid, device, flags, comm, share_comm):
     message = 'initialize process: {:d} with GPU: {} game: {}'.format(pid, device, flags.rom)
     comm.send([-1, 'print', message], dest=flags.threads)
     import os
@@ -114,9 +112,9 @@ def initialize(pid, device, flags, comm):
 
     # initialize agent
     if flags.ot:
-        network = neural_networks.OptimalityTighteningNetwork(pid, flags, device)
+        network = neural_networks.OptimalityTighteningNetwork(pid, flags, device, share_comm)
     else:
-        network = neural_networks.DeepQNetwork(pid, flags, device)
+        network = neural_networks.DeepQNetwork(pid, flags, device, share_comm)
 
     setting_file.write(network.nn_structure_file)
     setting_file.close()
@@ -149,8 +147,10 @@ def display_threads(message_dict, flags=FLAGS):
 
 
 def main(argv=None):
+    # comm is used for message transmitting
     comm = MPI.COMM_WORLD
     pid = comm.Get_rank()
+
     pid_device = {}
     d = eval(FLAGS.gpu_config)
     for device, pids in d.items():
@@ -173,11 +173,18 @@ def main(argv=None):
         flags.one_bound = True
 
     if pid == flags.threads:
+        color = 0
+    else:
+        color = 1
+    # share_comm is used for sharing parameters
+    share_comm = MPI.COMM_WORLD.Split(color, pid)
+    # print share_comm.Get_rank(), share_comm.Get_rank()
+
+    if pid == flags.threads:
         # process=threads is the printer process and the main process
         if tf.gfile.Exists(FLAGS.logs_path):
             tf.gfile.DeleteRecursively(FLAGS.logs_path)
-        for i in xrange(flags.threads):
-            comm.send(True, dest=i, tag=99)
+        comm.Barrier()
         """
         [pid, 'step', [testing, epoch, steps_left]]
         [pid, 'speed', [current, avg]]
@@ -196,17 +203,17 @@ def main(argv=None):
                 if key == 'print':
                     element.setdefault(key, []).append(message)
                 if key == 'END':
-                    print '\n', pid, 'join'
+                    print '\n', pid, 'join',
                     end_threads[pid] = True
             if message_dict:  # not empty
                 display_threads(message_dict)
     else:
-        assert comm.recv(source=flags.threads, tag=99)
+        comm.Barrier()
 
     threads_specific_config = eval(flags.threads_specific_config)
     for key, val in threads_specific_config.get(pid, {}).items():
         setattr(flags, key, val)
-    initialize(pid, pid_device.get(pid, "gpu0")[-1], flags, comm)
+    initialize(pid, pid_device.get(pid, "gpu0")[-1], flags, comm, share_comm)
 
 
 if __name__ == '__main__':
