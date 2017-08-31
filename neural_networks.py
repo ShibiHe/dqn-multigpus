@@ -46,7 +46,9 @@ class DeepQNetwork(object):
         config.log_device_placement = False
         if flags.use_gpu:
             config.gpu_options.allow_growth = True
+            config.gpu_options.per_process_gpu_memory_fraction = self.flags.gpu_memory_fraction
             config.allow_soft_placement = True
+
         init = tf.global_variables_initializer()
         self.saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'))
         self.sess = tf.Session(config=config)

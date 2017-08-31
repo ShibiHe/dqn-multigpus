@@ -22,6 +22,7 @@ tf.app.flags.DEFINE_bool('test', False, 'enable test mode')
 tf.app.flags.DEFINE_bool('ckpt', False, 'enable save models')
 tf.app.flags.DEFINE_integer('feeding_threads', 1, 'feeding data threads')
 tf.app.flags.DEFINE_integer('feeding_queue_size', 50, 'feeding queue capacity')
+tf.app.flags.DEFINE_float('gpu_memory_fraction', 0.3, 'gpu memory fraction')
 
 # ALE Environment settings
 tf.app.flags.DEFINE_string('rom', 'breakout', 'game ROM')
@@ -77,6 +78,7 @@ def initialize(pid, device, flags, comm, share_comm):
     message = 'initialize process: {:d} with GPU: {} game: {}'.format(pid, device, flags.rom)
     comm.send([-1, 'print', message], dest=flags.threads)
     import os
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = device[-1]
     np.random.seed(flags.seed)
@@ -185,6 +187,8 @@ def main(argv=None):
         if tf.gfile.Exists(FLAGS.logs_path):
             tf.gfile.DeleteRecursively(FLAGS.logs_path)
         comm.Barrier()
+        if flags.logs_path == './logs':
+            print 'WARNING: logs_path is not specified, default to ./logs'
         """
         [pid, 'step', [testing, epoch, steps_left]]
         [pid, 'speed', [current, avg]]
