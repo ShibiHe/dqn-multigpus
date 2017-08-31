@@ -130,6 +130,8 @@ class DeepQNetwork(object):
                 self.action_values_given_state_old.append(self._inference(self.images_old))
                 old_scope.reuse_variables()
                 self.feed_action_values_given_state_old.append(self._inference(self.feed_images_old))
+        with tf.name_scope('exploration'):
+            self.distribution_action_values_given_state_old = self._distribution(tf.stack(self.action_values_given_state_old))
 
     def _construct_optimizer(self):
         self.opt = None
@@ -139,12 +141,19 @@ class DeepQNetwork(object):
             self.opt = tf.train.AdamOptimizer(self.flags.lr, epsilon=0.01)
         assert self.opt is not None
 
+    def _distribution(self, input_tensor):
+        """
+            process * batch * actions
+            return batch * actions
+        """
+        return tcd.percentile(input_tensor, 75, axis=0)
+
     def _construct_training_graph(self):
         discount = tf.constant(self.flags.discount, tf.float32, [], 'discount', True)
         with tf.name_scope('distribution'):
             # shape= (threads, batch, actions)
             stacks_action_values_given_state_old = tf.stack(self.feed_action_values_given_state_old)
-            final_action_values_given_state_old = tcd.percentile(stacks_action_values_given_state_old, 75, axis=0)
+            final_action_values_given_state_old = self._distribution(stacks_action_values_given_state_old)
         with tf.name_scope('diff'):
             targets = self.feed_rewards + (1.0 - tf.cast(self.feed_terminals, tf.float32)) * discount * \
                                      tf.reduce_max(final_action_values_given_state_old, axis=1)
@@ -384,17 +393,22 @@ class DeepQNetwork(object):
                     feed_dict[self.assign_variable_placeholders[i_v]] = self.recv_buf_list[i_v][i_p, ...]
                 self.sess.run(self.assign_old_variables_ops_group[i_p], feed_dict=feed_dict)
 
-    def get_action_values(self, states):
-        return self.sess.run(self.action_values_given_state, feed_dict={self.images: states})
+    def get_action_values(self, states, switch='current'):
+        if switch == 'current':
+            return self.sess.run(self.action_values_given_state, feed_dict={self.images: states})
+        if switch == 'distribution':
+            return self.sess.run(self.distribution_action_values_given_state_old, feed_dict={self.images_old: states})
 
     def get_action_values_old(self, states, q_old_number=None):
+        if q_old_number == 'all':
+            return self.sess.run(self.action_values_given_state_old, feed_dict={self.images_old: states})
         if q_old_number is None:
             q_old_number = self.pid
         return self.sess.run(self.action_values_given_state_old[q_old_number], feed_dict={self.images_old: states})
 
     def choose_action(self, phi):
         phi = np.expand_dims(phi, axis=0)
-        action_values = self.get_action_values(phi)
+        action_values = self.get_action_values(phi, 'distribution')
         action = np.argmax(action_values, axis=1)[0]
         return action
 
