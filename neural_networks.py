@@ -44,7 +44,9 @@ class DeepQNetwork(object):
         config.log_device_placement = False
         if flags.use_gpu:
             config.gpu_options.allow_growth = True
+            config.gpu_options.per_process_gpu_memory_fraction = self.flags.gpu_memory_fraction
             config.allow_soft_placement = True
+
         init = tf.global_variables_initializer()
         self.saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'))
         self.sess = tf.Session(config=config)
@@ -155,7 +157,7 @@ class DeepQNetwork(object):
             assign_ops = []
             for (cur, old) in zip(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'),
                                 tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='old')):
-                assert cur.name[7:] == old.name[3:]
+                assert cur.name[cur.name.rfind('/') + 1:] == old.name[old.name.rfind('/') + 1:]
                 assign_ops.append(tf.assign(old, cur))
             self.copy_cur2old_op = tf.group(*assign_ops)
 
