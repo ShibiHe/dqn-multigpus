@@ -44,7 +44,8 @@ class DeepQNetwork(object):
         config.log_device_placement = False
         if flags.use_gpu:
             config.gpu_options.allow_growth = True
-            config.gpu_options.per_process_gpu_memory_fraction = self.flags.gpu_memory_fraction
+            if self.flags.gpu_memory_fraction != 0.0:
+                config.gpu_options.per_process_gpu_memory_fraction = self.flags.gpu_memory_fraction
             config.allow_soft_placement = True
 
         init = tf.global_variables_initializer()
@@ -127,7 +128,7 @@ class DeepQNetwork(object):
         if self.flags.optimizer == 'rmsprop':
             self.opt = tf.train.RMSPropOptimizer(self.flags.lr, decay=0.95, epsilon=0.01)
         if self.flags.optimizer == 'adam':
-            self.opt = tf.train.AdamOptimizer(self.flags.lr, epsilon=0.01)
+            self.opt = tf.train.AdamOptimizer(self.flags.lr, beta2=0.9, epsilon=0.0001)
         assert self.opt is not None
 
     def _construct_training_graph(self):
