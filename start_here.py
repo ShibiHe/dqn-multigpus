@@ -11,7 +11,7 @@ import agents
 FLAGS = tf.app.flags.FLAGS
 
 # Experiment settings
-tf.app.flags.DEFINE_integer('epochs', 50, 'Number of training epochs')
+tf.app.flags.DEFINE_integer('epochs', 40, 'Number of training epochs')
 tf.app.flags.DEFINE_integer('steps_per_epoch', 250000, 'Number of steps per epoch')
 tf.app.flags.DEFINE_integer('test_length', 125000, 'Number of steps per test')
 tf.app.flags.DEFINE_integer('seed', 123456, 'random seed')
@@ -22,7 +22,7 @@ tf.app.flags.DEFINE_bool('test', False, 'enable test mode')
 tf.app.flags.DEFINE_bool('ckpt', False, 'enable save models')
 tf.app.flags.DEFINE_integer('feeding_threads', 1, 'feeding data threads')
 tf.app.flags.DEFINE_integer('feeding_queue_size', 50, 'feeding queue capacity')
-tf.app.flags.DEFINE_float('gpu_memory_fraction', 0.3, 'gpu memory fraction')
+tf.app.flags.DEFINE_float('gpu_memory_fraction', 0.3, 'gpu memory fraction, 0.0 = no limit')
 
 # ALE Environment settings
 tf.app.flags.DEFINE_string('rom', 'breakout', 'game ROM')
@@ -38,7 +38,7 @@ tf.app.flags.DEFINE_integer('max_start_no_op', 30, 'Maximum number of null_ops a
 tf.app.flags.DEFINE_bool('lol_end', True, 'lost of life ends training episode')
 
 # Agent settings
-tf.app.flags.DEFINE_float('lr', 0.00025, 'learning rate')
+tf.app.flags.DEFINE_float('lr', 0.0002, 'learning rate')
 tf.app.flags.DEFINE_float('discount', 0.99, 'discount rate')
 tf.app.flags.DEFINE_float('ep_st', 1.0, 'epsilon start value')
 tf.app.flags.DEFINE_float('ep_min', 0.1, 'epsilon minimum value')
