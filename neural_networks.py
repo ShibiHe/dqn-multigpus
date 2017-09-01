@@ -45,7 +45,7 @@ class DeepQNetwork(object):
         config = tf.ConfigProto()
         config.log_device_placement = False
         if flags.use_gpu:
-            config.gpu_options.allow_growth = True
+            config.gpu_options.allow_growth = False
             if self.flags.gpu_memory_fraction != 0.0:
                 config.gpu_options.per_process_gpu_memory_fraction = self.flags.gpu_memory_fraction
             config.allow_soft_placement = True
