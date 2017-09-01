@@ -135,11 +135,20 @@ class DeepQNetwork(object):
             self.distribution_action_values_given_state_old = self._distribution(tf.stack(self.action_values_given_state_old))
 
     def _construct_optimizer(self):
+        with tf.name_scope('learning_rate_decay'):
+            decay = tf.constant(
+                (self.flags.lr_min - self.flags.lr)/(self.flags.lr_decay_b - self.flags.lr_decay_a), dtype=tf.float32)
+            self.learning_rate = tf.case(
+                [(tf.less(self.global_step, self.flags.lr_decay_a), lambda: self.flags.lr),
+                 (tf.less(self.global_step, self.flags.lr_decay_b),
+                     lambda: self.flags.lr + (self.global_step - self.flags.lr_decay_a) * decay),
+                 (tf.greater_equal(self.global_step, self.flags.lr_decay_b), lambda: self.flags.lr_min)],
+                default=lambda: self.flags.lr)
         self.opt = None
         if self.flags.optimizer == 'rmsprop':
-            self.opt = tf.train.RMSPropOptimizer(self.flags.lr, decay=0.95, epsilon=0.01)
+            self.opt = tf.train.RMSPropOptimizer(self.learning_rate, decay=0.95, epsilon=0.01)
         if self.flags.optimizer == 'adam':
-            self.opt = tf.train.AdamOptimizer(self.flags.lr, beta2=0.99, epsilon=0.0001)
+            self.opt = tf.train.AdamOptimizer(self.learning_rate, beta2=0.99, epsilon=0.0001)
         assert self.opt is not None
 
     def _distribution(self, input_tensor):

@@ -16,7 +16,7 @@ tf.app.flags.DEFINE_integer('steps_per_epoch', 250000, 'Number of steps per epoc
 tf.app.flags.DEFINE_integer('test_length', 125000, 'Number of steps per test')
 tf.app.flags.DEFINE_integer('seed', 123456, 'random seed')
 tf.app.flags.DEFINE_bool('diff_seed', True, 'enable different seed for each process')
-tf.app.flags.DEFINE_integer('summary_fr', 3000, 'summary every x training steps')
+tf.app.flags.DEFINE_integer('summary_fr', 6000, 'summary every x training steps')
 tf.app.flags.DEFINE_string('logs_path', './logs', 'tensor board path')
 tf.app.flags.DEFINE_bool('test', False, 'enable test mode')
 tf.app.flags.DEFINE_bool('ckpt', False, 'enable save models')
@@ -39,10 +39,14 @@ tf.app.flags.DEFINE_bool('lol_end', True, 'lost of life ends training episode')
 
 # Agent settings
 tf.app.flags.DEFINE_float('lr', 0.0002, 'learning rate')
+tf.app.flags.DEFINE_float('lr_min', 0.00005, 'learning rate minimum')
+tf.app.flags.DEFINE_integer('lr_decay_a', 250000*2, 'learning rate decay a, training steps')  # <2M 8epochs
+tf.app.flags.DEFINE_integer('lr_decay_b', 250000*8, 'learning rate decay b, training steps')  # <8M 32 epochs
 tf.app.flags.DEFINE_float('discount', 0.99, 'discount rate')
 tf.app.flags.DEFINE_float('ep_st', 1.0, 'epsilon start value')
 tf.app.flags.DEFINE_float('ep_min', 0.1, 'epsilon minimum value')
 tf.app.flags.DEFINE_float('ep_decay', 1000000, 'steps for epsilon reaching minimum')
+tf.app.flags.DEFINE_float('ep_decay_b', 250000*8, 'trainings for epsilon reaching 0.01')
 tf.app.flags.DEFINE_integer('phi_length', 4, 'frames for representing a state')
 tf.app.flags.DEFINE_integer('memory', 1000000, 'replay memory size')
 tf.app.flags.DEFINE_integer('batch', 32, 'training batch size')
