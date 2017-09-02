@@ -1,4 +1,5 @@
 __author__ = 'frankhe'
+import time
 import sys
 import tensorflow as tf
 import numpy as np
@@ -147,6 +148,12 @@ def display_threads(message_dict, flags=FLAGS):
                     (1.0 - float(element['step'][2]) / total_steps) * 100)
             if 'speed' in element:
                 one_line += ' St/Sec: cur:{:d} avg:{:d} '.format(element['speed'][0], element['speed'][1])
+        if len(one_line) > 160:
+            sys.stdout.write(one_line)
+            sys.stdout.flush()
+            time.sleep(0.5)
+            one_line = '\r\033[K'
+
     sys.stdout.write(one_line)
     sys.stdout.flush()
     return
@@ -201,7 +208,7 @@ def main(argv=None):
         end_threads = np.zeros(flags.threads, dtype=np.bool_)
         while True:
             message_dict = {}
-            for i in xrange(flags.threads * 12):
+            for i in xrange(flags.threads * 10):
                 if np.all(end_threads):
                     return
                 pid, key, message = comm.recv(source=MPI.ANY_SOURCE)
