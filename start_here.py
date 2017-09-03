@@ -151,7 +151,7 @@ def display_threads(message_dict, flags=FLAGS):
         if len(one_line) > 160:
             sys.stdout.write(one_line)
             sys.stdout.flush()
-            time.sleep(0.5)
+            time.sleep(1.0)
             one_line = '\r\033[K'
 
     sys.stdout.write(one_line)
@@ -208,8 +208,9 @@ def main(argv=None):
         end_threads = np.zeros(flags.threads, dtype=np.bool_)
         while True:
             message_dict = {}
-            for i in xrange(flags.threads * 10):
+            for i in xrange(flags.threads * 5):
                 if np.all(end_threads):
+                    comm.Barrier()
                     return
                 pid, key, message = comm.recv(source=MPI.ANY_SOURCE)
                 element = message_dict.setdefault(pid, {})

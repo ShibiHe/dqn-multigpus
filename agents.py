@@ -186,6 +186,7 @@ class QLearning(object):
     def finish_everything(self):
         self.network.stop_feeding()
         self.comm.send([self.pid, 'END', ''], dest=self.flags.threads)
+        self.comm.Barrier()
 
 
 class OptimalityTigheningAgent(QLearning):
