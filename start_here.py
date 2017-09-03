@@ -149,10 +149,7 @@ def display_threads(message_dict, flags=FLAGS):
             if 'speed' in element:
                 one_line += ' St/Sec: cur:{:d} avg:{:d} '.format(element['speed'][0], element['speed'][1])
         if len(one_line) > 160:
-            sys.stdout.write(one_line)
-            sys.stdout.flush()
-            time.sleep(1.0)
-            one_line = '\r\033[K'
+            break
 
     sys.stdout.write(one_line)
     sys.stdout.flush()
