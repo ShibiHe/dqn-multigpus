@@ -148,8 +148,9 @@ def display_threads(message_dict, flags=FLAGS):
                     (1.0 - float(element['step'][2]) / total_steps) * 100)
             if 'speed' in element:
                 one_line += ' St/Sec: cur:{:d} avg:{:d} '.format(element['speed'][0], element['speed'][1])
-        if len(one_line) > 160:
-            break
+
+    if len(one_line) > 160:
+        one_line = one_line[:182]
 
     sys.stdout.write(one_line)
     sys.stdout.flush()
@@ -205,7 +206,7 @@ def main(argv=None):
         end_threads = np.zeros(flags.threads, dtype=np.bool_)
         while True:
             message_dict = {}
-            for i in xrange(flags.threads * 5):
+            for i in xrange(flags.threads * 2):
                 if np.all(end_threads):
                     comm.Barrier()
                     return
