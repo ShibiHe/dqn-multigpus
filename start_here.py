@@ -41,13 +41,13 @@ tf.app.flags.DEFINE_bool('lol_end', True, 'lost of life ends training episode')
 # Agent settings
 tf.app.flags.DEFINE_float('lr', 0.0002, 'learning rate')
 tf.app.flags.DEFINE_float('lr_min', 0.00005, 'learning rate minimum')
-tf.app.flags.DEFINE_integer('lr_decay_a', 250000*2, 'learning rate decay a, training steps')  # <2M 8epochs
-tf.app.flags.DEFINE_integer('lr_decay_b', 250000*8, 'learning rate decay b, training steps')  # <8M 32 epochs
+tf.app.flags.DEFINE_integer('lr_decay_a', 250000*FLAGS.epochs/10/4, 'learning rate decay a, training steps')  # 1/10
+tf.app.flags.DEFINE_integer('lr_decay_b', 250000*FLAGS.epochs/10/4*5, 'learning rate decay b, training steps')  # 1/2
 tf.app.flags.DEFINE_float('discount', 0.99, 'discount rate')
 tf.app.flags.DEFINE_float('ep_st', 1.0, 'epsilon start value')
 tf.app.flags.DEFINE_float('ep_min', 0.1, 'epsilon minimum value')
-tf.app.flags.DEFINE_float('ep_decay', 1000000, 'steps for epsilon reaching minimum')
-tf.app.flags.DEFINE_float('ep_decay_b', 250000*8, 'trainings for epsilon reaching 0.01')
+tf.app.flags.DEFINE_float('ep_decay', 250000*FLAGS.epochs/10, 'steps for epsilon reaching minimum')  # 1/10
+tf.app.flags.DEFINE_float('ep_decay_b', 250000*FLAGS.epochs/10*5, 'trainings for epsilon reaching 0.01')  # 1/2
 tf.app.flags.DEFINE_integer('phi_length', 4, 'frames for representing a state')
 tf.app.flags.DEFINE_integer('memory', 1000000, 'replay memory size')
 tf.app.flags.DEFINE_integer('batch', 32, 'training batch size')
