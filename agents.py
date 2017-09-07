@@ -27,10 +27,11 @@ class QLearning(object):
         self.epoch_time = 0  # add to tensorboard per epoch
         self.state_action_avg_val = 0  # add to tensorboard per epoch
         self.testing_data = None
+        self.trained_batch_counter = 0
+        self.global_step_counter = 0
 
         # episode attributes:
         self.step_counter = 0
-        self.trained_batch_counter = 0
         self.episode_reward = 0
         self.loss_averages = None
         self.start_time = None
@@ -56,7 +57,6 @@ class QLearning(object):
         """
 
         self.step_counter = 0
-        self.trained_batch_counter = 0
         self.episode_reward = 0  # only useful when testing
         # We report the mean loss for every episode.
         self.loss_averages = []
@@ -78,6 +78,7 @@ class QLearning(object):
         :param reward: received reward
         """
         self.step_counter += 1
+        self.global_step_counter += 1
         episode_time = time.time() - self.start_time
 
         if self.testing:
@@ -130,6 +131,7 @@ class QLearning(object):
            An integer action.
         """
         self.step_counter += 1
+        self.global_step_counter += 1
         # TESTING---------------------------
         if self.testing:
             self.episode_reward += reward
@@ -138,8 +140,10 @@ class QLearning(object):
             # Training--------------------------
             if len(self.train_data_set) > self.flags.train_st:
                 self.epsilon = max(self.flags.ep_min, self.epsilon - self.epsilon_rate)
+                if self.trained_batch_counter > self.flags.ep_decay_b:
+                    self.epsilon = 0.01
                 action = self.choose_action(self.train_data_set, observation, self.epsilon, reward)
-                if self.step_counter % self.flags.train_fr == 0:
+                if self.global_step_counter % self.flags.train_fr == 0:
                     loss = self._train()
                     self.trained_batch_counter += 1
                     self.loss_averages.append(loss)
@@ -182,6 +186,7 @@ class QLearning(object):
     def finish_everything(self):
         self.network.stop_feeding()
         self.comm.send([self.pid, 'END', ''], dest=self.flags.threads)
+        self.comm.Barrier()
 
 
 class OptimalityTigheningAgent(QLearning):

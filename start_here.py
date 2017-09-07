@@ -39,10 +39,14 @@ tf.app.flags.DEFINE_bool('lol_end', True, 'lost of life ends training episode')
 
 # Agent settings
 tf.app.flags.DEFINE_float('lr', 0.0002, 'learning rate')
+tf.app.flags.DEFINE_float('lr_min', 0.00005, 'learning rate minimum')
+tf.app.flags.DEFINE_integer('lr_decay_a', 250000*FLAGS.epochs/10/4, 'learning rate decay a, training steps')  # 1/10
+tf.app.flags.DEFINE_integer('lr_decay_b', 250000*FLAGS.epochs/10/4*5, 'learning rate decay b, training steps')  # 1/2
 tf.app.flags.DEFINE_float('discount', 0.99, 'discount rate')
 tf.app.flags.DEFINE_float('ep_st', 1.0, 'epsilon start value')
 tf.app.flags.DEFINE_float('ep_min', 0.1, 'epsilon minimum value')
-tf.app.flags.DEFINE_float('ep_decay', 1000000, 'steps for epsilon reaching minimum')
+tf.app.flags.DEFINE_float('ep_decay', 250000*FLAGS.epochs/10, 'steps for epsilon reaching minimum')  # 1/10
+tf.app.flags.DEFINE_float('ep_decay_b', 250000*FLAGS.epochs/10*5, 'trainings for epsilon reaching 0.01')  # 1/2
 tf.app.flags.DEFINE_integer('phi_length', 4, 'frames for representing a state')
 tf.app.flags.DEFINE_integer('memory', 1000000, 'replay memory size')
 tf.app.flags.DEFINE_integer('batch', 32, 'training batch size')
@@ -143,6 +147,10 @@ def display_threads(message_dict, flags=FLAGS):
                     (1.0 - float(element['step'][2]) / total_steps) * 100)
             if 'speed' in element:
                 one_line += ' St/Sec: cur:{:d} avg:{:d} '.format(element['speed'][0], element['speed'][1])
+
+    if len(one_line) > 160:
+        one_line = one_line[:182]
+
     sys.stdout.write(one_line)
     sys.stdout.flush()
     return
@@ -187,7 +195,7 @@ def main(argv=None):
         end_threads = np.zeros(flags.threads, dtype=np.bool_)
         while True:
             message_dict = {}
-            for i in xrange(flags.threads * 12):
+            for i in xrange(flags.threads * 2):
                 if np.all(end_threads):
                     return
                 pid, key, message = comm.recv(source=MPI.ANY_SOURCE)
@@ -197,7 +205,7 @@ def main(argv=None):
                 if key == 'print':
                     element.setdefault(key, []).append(message)
                 if key == 'END':
-                    print '\n', pid, 'join'
+                    print '\n', pid, 'join',
                     end_threads[pid] = True
             if message_dict:  # not empty
                 display_threads(message_dict)
