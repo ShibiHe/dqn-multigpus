@@ -5,13 +5,14 @@ import data_sets
 
 
 class QLearning(object):
-    def __init__(self, pid, network, flags, comm):
+    def __init__(self, pid, network, flags, comm, share_comm):
         self.pid = pid
         self.network = network
         self.flags = flags
         self.comm = comm
-        self.train_data_set = data_sets.DataSet(flags)
-        self.test_data_set = data_sets.DataSet(flags, max_steps=flags.phi_length * 2)
+        self.share_comm = share_comm
+        self.train_data_set = data_sets.DataSet(flags, share_comm)
+        self.test_data_set = data_sets.DataSet(flags, share_comm, max_steps=flags.phi_length * 2)
         self.network.add_train_data_set(self.train_data_set)
         self.epsilon = flags.ep_st
         if flags.ep_decay != 0:
@@ -190,8 +191,8 @@ class QLearning(object):
 
 
 class OptimalityTigheningAgent(QLearning):
-    def __init__(self, pid, network, flags, comm):
-        super(OptimalityTigheningAgent, self).__init__(pid, network, flags, comm)
+    def __init__(self, pid, network, flags, comm, share_comm):
+        super(OptimalityTigheningAgent, self).__init__(pid, network, flags, comm, share_comm)
         self.train_data_set = data_sets.OptimalityTighteningDataset(flags)
         self.network.add_train_data_set(self.train_data_set)
 

@@ -1,10 +1,12 @@
 __author__ = 'frankhe'
 import numpy as np
+import time
 
 
 class DataSet(object):
-    def __init__(self, flags, max_steps=None):
+    def __init__(self, flags, share_comm, max_steps=None):
         self.flags = flags
+        self.share_comm = share_comm
         self.width = flags.input_width
         self.height = flags.input_height
         self.max_steps = flags.memory
@@ -23,6 +25,8 @@ class DataSet(object):
         self.bottom = 0
         self.top = 0
         self.size = 0
+        self.total_experience = 0
+        self.update_fr = 10000
 
     def add_sample(self, img, action, reward, terminal, return_value=0.0, start_index=-1):
         if self.flags.clip_reward:
@@ -40,6 +44,35 @@ class DataSet(object):
         else:
             self.size += 1
         self.top = (self.top + 1) % self.max_steps
+        self.total_experience += 1
+        if self.total_experience % self.update_fr == 0 and self.max_steps == self.flags.memory:
+            time.sleep(0.1)
+            if self.share_comm.rank == 0:
+                self.terminal[self.top - 1] = True
+            if self.top >= self.update_fr:
+                self.share_comm.Bcast(self.imgs[self.top - self.update_fr: self.top], 0)
+                self.share_comm.Bcast(self.actions[self.top - self.update_fr: self.top], 0)
+                self.share_comm.Bcast(self.rewards[self.top - self.update_fr: self.top], 0)
+                self.share_comm.Bcast(self.return_value[self.top - self.update_fr: self.top], 0)
+                self.share_comm.Bcast(self.terminal[self.top - self.update_fr: self.top], 0)
+                self.share_comm.Bcast(self.start_index[self.top - self.update_fr: self.top], 0)
+                self.share_comm.Bcast(self.terminal_index[self.top - self.update_fr: self.top], 0)
+            else:
+                left_amount = self.update_fr - self.top
+                self.share_comm.Bcast(self.imgs[self.max_steps-left_amount:], 0)
+                self.share_comm.Bcast(self.imgs[:self.top], 0)
+                self.share_comm.Bcast(self.actions[self.max_steps-left_amount:], 0)
+                self.share_comm.Bcast(self.actions[:self.top], 0)
+                self.share_comm.Bcast(self.rewards[self.max_steps-left_amount:], 0)
+                self.share_comm.Bcast(self.rewards[:self.top], 0)
+                self.share_comm.Bcast(self.return_value[self.max_steps-left_amount:], 0)
+                self.share_comm.Bcast(self.return_value[:self.top], 0)
+                self.share_comm.Bcast(self.terminal[self.max_steps-left_amount:], 0)
+                self.share_comm.Bcast(self.terminal[:self.top], 0)
+                self.share_comm.Bcast(self.start_index[self.max_steps-left_amount:], 0)
+                self.share_comm.Bcast(self.start_index[:self.top], 0)
+                self.share_comm.Bcast(self.terminal_index[self.max_steps-left_amount:], 0)
+                self.share_comm.Bcast(self.terminal_index[:self.top], 0)
 
     def __len__(self):
         return self.size
@@ -115,8 +148,8 @@ class DataSet(object):
 
 
 class OptimalityTighteningDataset(DataSet):
-    def __init__(self, flags, max_step=None):
-        super(OptimalityTighteningDataset, self).__init__(flags, max_step)
+    def __init__(self, flags, share_comm, max_step=None):
+        super(OptimalityTighteningDataset, self).__init__(flags, share_comm, max_step)
         self.discount_table = np.power(self.flags.discount, np.arange(30))
         batch_size = self.flags.batch
         transitions_len = self.flags.nob

@@ -127,9 +127,9 @@ def initialize(pid, device, flags, comm, share_comm):
     setting_file.close()
 
     if flags.ot:
-        agent = agents.OptimalityTigheningAgent(pid, network, flags, comm)
+        agent = agents.OptimalityTigheningAgent(pid, network, flags, comm, share_comm)
     else:
-        agent = agents.QLearning(pid, network, flags, comm)
+        agent = agents.QLearning(pid, network, flags, comm, share_comm)
     interaction.Interaction(pid, ale, agent, flags, comm).start()
 
 
