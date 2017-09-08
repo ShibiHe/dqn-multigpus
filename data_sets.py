@@ -25,8 +25,6 @@ class DataSet(object):
         self.bottom = 0
         self.top = 0
         self.size = 0
-        self.total_experience = 0
-        self.update_fr = 10000
 
     def add_sample(self, img, action, reward, terminal, return_value=0.0, start_index=-1):
         if self.flags.clip_reward:
@@ -44,35 +42,44 @@ class DataSet(object):
         else:
             self.size += 1
         self.top = (self.top + 1) % self.max_steps
-        self.total_experience += 1
-        if self.total_experience % self.update_fr == 0 and self.max_steps == self.flags.memory:
-            self.share_comm.Barrier()
-            if self.share_comm.rank == 0:
-                self.terminal[self.top - 1] = True
-            if self.top >= self.update_fr:
-                self.share_comm.Bcast(self.imgs[self.top - self.update_fr: self.top], 0)
-                self.share_comm.Bcast(self.actions[self.top - self.update_fr: self.top], 0)
-                self.share_comm.Bcast(self.rewards[self.top - self.update_fr: self.top], 0)
-                self.share_comm.Bcast(self.return_value[self.top - self.update_fr: self.top], 0)
-                self.share_comm.Bcast(self.terminal[self.top - self.update_fr: self.top], 0)
-                self.share_comm.Bcast(self.start_index[self.top - self.update_fr: self.top], 0)
-                self.share_comm.Bcast(self.terminal_index[self.top - self.update_fr: self.top], 0)
-            else:
-                left_amount = self.update_fr - self.top
-                self.share_comm.Bcast(self.imgs[self.max_steps-left_amount:], 0)
-                self.share_comm.Bcast(self.imgs[:self.top], 0)
-                self.share_comm.Bcast(self.actions[self.max_steps-left_amount:], 0)
-                self.share_comm.Bcast(self.actions[:self.top], 0)
-                self.share_comm.Bcast(self.rewards[self.max_steps-left_amount:], 0)
-                self.share_comm.Bcast(self.rewards[:self.top], 0)
-                self.share_comm.Bcast(self.return_value[self.max_steps-left_amount:], 0)
-                self.share_comm.Bcast(self.return_value[:self.top], 0)
-                self.share_comm.Bcast(self.terminal[self.max_steps-left_amount:], 0)
-                self.share_comm.Bcast(self.terminal[:self.top], 0)
-                self.share_comm.Bcast(self.start_index[self.max_steps-left_amount:], 0)
-                self.share_comm.Bcast(self.start_index[:self.top], 0)
-                self.share_comm.Bcast(self.terminal_index[self.max_steps-left_amount:], 0)
-                self.share_comm.Bcast(self.terminal_index[:self.top], 0)
+
+    def update_replay(self, global_train_step, update_start=None, update_end=None):
+        up_end = int(self.flags.train_fr * global_train_step + self.flags.train_st)
+        up_st = int(up_end - self.flags.train_fr * self.flags.freeze)
+        if update_start is not None:
+            up_st = update_start
+        if update_end is not None:
+            up_end = update_end
+        up_st = up_st % self.max_steps
+        up_end = up_end % self.max_steps
+
+        # print self.share_comm.rank, '-', up_st, '-', up_end, self.top
+        if self.share_comm.rank == 0:
+            self.terminal[up_end - 1] = True
+
+        if up_st < up_end:
+            self.share_comm.Bcast(self.imgs[up_st: up_end], 0)
+            self.share_comm.Bcast(self.actions[up_st: up_end], 0)
+            self.share_comm.Bcast(self.rewards[up_st: up_end], 0)
+            self.share_comm.Bcast(self.terminal[up_st: up_end], 0)
+            self.share_comm.Bcast(self.return_value[up_st: up_end], 0)
+            self.share_comm.Bcast(self.start_index[up_st: up_end], 0)
+            self.share_comm.Bcast(self.terminal_index[up_st: up_end], 0)
+        if up_st > up_end:
+            self.share_comm.Bcast(self.imgs[up_st:], 0)
+            self.share_comm.Bcast(self.imgs[:up_end], 0)
+            self.share_comm.Bcast(self.actions[up_st:], 0)
+            self.share_comm.Bcast(self.actions[:up_end], 0)
+            self.share_comm.Bcast(self.rewards[up_st:], 0)
+            self.share_comm.Bcast(self.rewards[:up_end], 0)
+            self.share_comm.Bcast(self.terminal[up_st:], 0)
+            self.share_comm.Bcast(self.terminal[:up_end], 0)
+            self.share_comm.Bcast(self.return_value[up_st:], 0)
+            self.share_comm.Bcast(self.return_value[:up_end], 0)
+            self.share_comm.Bcast(self.start_index[up_st:], 0)
+            self.share_comm.Bcast(self.start_index[:up_end], 0)
+            self.share_comm.Bcast(self.terminal_index[up_st:], 0)
+            self.share_comm.Bcast(self.terminal_index[:up_end], 0)
 
     def __len__(self):
         return self.size

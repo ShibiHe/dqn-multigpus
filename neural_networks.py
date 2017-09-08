@@ -378,6 +378,7 @@ class DeepQNetwork(object):
 
     def train(self):
         if not self.training_started:  # first time training
+            self.train_data_set.update_replay(0, 0, self.flags.train_st)
             self._start_feeding_data()
             self.training_started = True
         _, loss, global_step = self.sess.run([self.apply_gradients, self.loss, self.global_step])
@@ -386,6 +387,7 @@ class DeepQNetwork(object):
             self.summary_writer.add_summary(summary, global_step)
         if global_step % self.flags.freeze == 0:
             self.update_network()
+            self.train_data_set.update_replay(global_step)
         return loss
 
     def update_network(self, update_all_q=True):

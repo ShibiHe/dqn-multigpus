@@ -180,6 +180,7 @@ def main(argv=None):
         flags.network = 'linear'
         flags.train_st = 2000
         flags.freeze = 100
+        flags.memory = 5000
         flags.ot = False
         flags.one_bound = True
 
