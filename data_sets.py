@@ -18,7 +18,7 @@ class DataSet(object):
         self.actions = np.zeros(self.max_steps, dtype='int32')
         self.rewards = np.zeros(self.max_steps, dtype='float32')
         self.return_value = np.zeros(self.max_steps, dtype='float32')
-        self.terminal = np.zeros(self.max_steps, dtype='bool')
+        self.terminal = np.zeros(self.max_steps, dtype='uint8')
         self.start_index = np.zeros(self.max_steps, dtype='int32')
         self.terminal_index = np.zeros(self.max_steps, dtype='int32')
 
@@ -46,7 +46,7 @@ class DataSet(object):
         self.top = (self.top + 1) % self.max_steps
         self.total_experience += 1
         if self.total_experience % self.update_fr == 0 and self.max_steps == self.flags.memory:
-            time.sleep(0.1)
+            self.share_comm.Barrier()
             if self.share_comm.rank == 0:
                 self.terminal[self.top - 1] = True
             if self.top >= self.update_fr:
