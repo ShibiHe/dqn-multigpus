@@ -156,7 +156,7 @@ class DeepQNetwork(object):
             process * batch * actions
             return batch * actions
         """
-        return tcd.percentile(input_tensor, 75, axis=0)
+        return tcd.percentile(input_tensor, self.flags.percentile, axis=0)
 
     def _construct_training_graph(self):
         discount = tf.constant(self.flags.discount, tf.float32, [], 'discount', True)

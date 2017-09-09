@@ -58,6 +58,7 @@ tf.app.flags.DEFINE_string('loss_func', 'huber', 'loss function: huber; quadrati
 tf.app.flags.DEFINE_string('optimizer', 'adam', 'optimizer type')
 tf.app.flags.DEFINE_integer('train_fr', 4, 'training frequency: train a batch every x steps')
 tf.app.flags.DEFINE_integer('train_st', 50000, 'training start: training starts after x steps')
+tf.app.flags.DEFINE_integer('percentile', 75, 'confidence interval')
 tf.app.flags.DEFINE_bool('clip_reward', True, 'clip reward to -1, 1')
 
 # Multi threads settings
