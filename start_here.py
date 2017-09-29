@@ -70,12 +70,19 @@ tf.app.flags.DEFINE_string('threads_specific_config', "{}",
                            """{0: {'rom': 'breakout'}, 1: {'rom': 'pong'}, 2: {'rom': 'beam_rider'},
                             3: {'rom': 'space_invaders'}}      configuration for each agent""")
 
-# optimality tightening
+# optimality tightening is deprecated in this project
 tf.app.flags.DEFINE_bool('ot', False, 'optimality tightening')
 tf.app.flags.DEFINE_bool('close2', True, 'close bounds')
 tf.app.flags.DEFINE_bool('one_bound', True, 'only use lower bounds')
 tf.app.flags.DEFINE_integer('nob', 4, 'number of bounds')
 tf.app.flags.DEFINE_float('pw', 0.8, 'penalty weight')
+
+# memory setting
+tf.app.flags.DEFINE_integer('episodic_memory', 10000, 'episodic memory size')
+tf.app.flags.DEFINE_integer('episodic_memory_buffer', 1000, 'episodic memory buffer size')
+tf.app.flags.DEFINE_integer('feature_dim', 512, 'feature dimensions')
+tf.app.flags.DEFINE_string('distance_metric', 'l2', 'nearest neighbor distance metric, l2, cos')
+tf.app.flags.DEFINE_integer('knn', 10, 'number of nearest neighbors')
 
 
 def initialize(pid, device, flags, comm):
@@ -168,13 +175,14 @@ def main(argv=None):
     flags = copy.deepcopy(FLAGS)
     flags.seed += int(flags.diff_seed) * pid
     if flags.test:
-        flags.threads = 2  # np=3
-        flags.gpus = 2
+        flags.threads = 1  # np=3
+        flags.gpus = 1
         flags.epochs = 2
         flags.steps_per_epoch = 10000
         flags.test_length = 2000
         flags.summary_fr = 100
         flags.network = 'linear'
+        flags.ep_st = 0.1
         flags.train_st = 2000
         flags.freeze = 100
         flags.ot = False

@@ -2,6 +2,7 @@ __author__ = 'frankhe'
 import time
 import numpy as np
 import data_sets
+from episodic_memory import EpisodicMemory
 
 
 class QLearning(object):
@@ -13,6 +14,7 @@ class QLearning(object):
         self.train_data_set = data_sets.DataSet(flags)
         self.test_data_set = data_sets.DataSet(flags, max_steps=flags.phi_length * 2)
         self.network.add_train_data_set(self.train_data_set)
+        self.episodic_memory = EpisodicMemory(flags, self.network)
         self.epsilon = flags.ep_st
         if flags.ep_decay != 0:
             self.epsilon_rate = (flags.ep_st - flags.ep_min) / flags.ep_decay
@@ -106,18 +108,53 @@ class QLearning(object):
         if self.loss_averages:  # if not empty
             self.network.episode_summary(np.mean(self.loss_averages))
 
-    def _post_end_episode(self, x):
-        pass
+    def _post_end_episode(self, terminal):
+        if self.testing:
+            return
+        q_return = 0.0
+        unclipped_cumulative_reward = 0.0
+        self.start_index = self.train_data_set.top
+        self.terminal_index = index = (self.start_index - 1) % self.train_data_set.max_steps
+        phi = self.train_data_set.last_phi()
+        while True:
+            q_return = q_return * self.flags.discount + self.train_data_set.rewards[index]
+            unclipped_cumulative_reward = unclipped_cumulative_reward * self.flags.discount + \
+                                          self.train_data_set.unclipped_rewards[index]
+            # self.train_data_set.return_value[index] = q_return
+            # self.train_data_set.terminal_index[index] = self.terminal_index
+            # add an item to episodic memory
+            if self.train_data_set.q_value[index] < q_return:
+                self.episodic_memory.add_item(phi,
+                                              self.train_data_set.actions[index],
+                                              unclipped_cumulative_reward,
+                                              self.train_data_set.features[index])
+
+            phi = self.train_data_set.last_phi(index)
+            index = (index - 1) % self.train_data_set.max_steps
+            if self.train_data_set.terminal[index] or index == self.train_data_set.bottom:
+                break
 
     def choose_action(self, data_set, img, epsilon, reward_received):
-        data_set.add_sample(self.last_img, self.last_action, reward_received, False, start_index=self.start_index)
         if np.random.rand() < epsilon:
+            data_set.add_sample(self.last_img, self.last_action, reward_received, False,
+                                start_index=self.start_index, q_value=0.0, feature=-1.0)
             return np.random.randint(0, self.flags.num_actions)
         phi = data_set.phi(img)
-        if self.step_counter < self.flags.phi_length:
-            phi[0:self.flags.phi_length - 1] = np.stack([img for _ in xrange(self.flags.phi_length - 1)], axis=0)
-        action = self.network.choose_action(phi)
-        return action
+        action, q_action_values, feature = self.network.choose_action(phi, get_feature=True)
+        data_set.add_sample(self.last_img, self.last_action, reward_received, False,
+                            start_index=self.start_index, q_value=q_action_values[action], feature=feature)
+
+        episodic_action_values = self.episodic_memory.lookup(feature)
+        action2 = np.argmax(episodic_action_values)
+        if action == action2:
+            return action
+        else:
+            w1 = q_action_values[action] / np.sum(q_action_values)
+            w2 = episodic_action_values[action2] / np.sum(episodic_action_values)
+            if w1 > w2:
+                return action
+            else:
+                return action2
 
     def _train(self):
         return self.network.train()

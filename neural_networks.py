@@ -33,6 +33,8 @@ class DeepQNetwork(object):
 
             # optimizer-----------------------------
             self._construct_optimizer()
+            # get features
+            self._construct_feature_extraction()
             # loss and train graph------------------
             self._construct_training_graph()
             # update old network--------------------
@@ -140,6 +142,12 @@ class DeepQNetwork(object):
             self.opt = tf.train.AdamOptimizer(self.learning_rate, beta2=0.99, epsilon=0.0001)
         assert self.opt is not None
 
+    def _construct_feature_extraction(self):
+        features_list = tf.get_collection('features', scope='current/')
+        self.features = features_list[0]
+        self.feed_features = features_list[1]  # this is from data pipeline during training
+        assert self.feed_features.shape == [self.flags.batch, 512]
+
     def _construct_training_graph(self):
         discount = tf.constant(self.flags.discount, tf.float32, [], 'discount', True)
         with tf.name_scope('diff'):
@@ -200,6 +208,9 @@ class DeepQNetwork(object):
             if grad is not None:
                 tf.add_to_collection('training_summaries', tf.summary.histogram(var.name + '/gradients', grad))
 
+        # add histograms for feature vector
+        self._activation_summary(self.feed_features)
+
         # add scalar for training loss
         tf.add_to_collection('training_summaries', tf.summary.scalar(self.loss.name + '/raw_loss', self.loss))
 
@@ -259,6 +270,7 @@ class DeepQNetwork(object):
         input_height = self.flags.input_height
         input_width = self.flags.input_width
         output_dim = self.flags.num_actions
+        feature_dim = self.flags.feature_dim
         channels = self.flags.phi_length
         """
         images batch * channels * height * width
@@ -271,14 +283,13 @@ class DeepQNetwork(object):
         images = images / self.flags.input_scale
         action_values = None
         if network_type == 'linear':
-            with tf.variable_scope('linear'):
-                images = tf.reshape(images, (-1, channels * input_height * input_width))
-                dim = images.get_shape()[1].value
-                weights = tf.get_variable('weights', shape=(dim, output_dim), dtype=tf.float32,
-                                          initializer=tfc.layers.variance_scaling_initializer(1.0))
-                bias = tf.get_variable('bias', shape=(output_dim,), dtype=tf.float32,
-                                       initializer=tf.constant_initializer(0.1))
-                action_values = tf.add(tf.matmul(images, weights), bias)
+            images = tf.reshape(images, (-1, channels * input_height * input_width))
+            dim = images.get_shape()[1].value
+            with tf.variable_scope('linear1'):
+                linear1 = self._linear_layer(images, dim, feature_dim)
+                tf.add_to_collection('features', linear1)
+            with tf.variable_scope('linear2'):
+                action_values = self._linear_layer(linear1, feature_dim, output_dim)
         if network_type == 'nature':
             with tf.variable_scope('conv1'):
                 size = 8 ; channels = channels ; filters = 32 ; stride = 4
@@ -291,11 +302,12 @@ class DeepQNetwork(object):
                 conv3 = self._conv_layer(conv2, size, channels, filters, stride, 'VALID')
             conv3_shape = conv3.get_shape().as_list()
             with tf.variable_scope('linear1'):
-                hiddens = 512 ; dim = conv3_shape[1] * conv3_shape[2] * conv3_shape[3]
+                hiddens = feature_dim ; dim = conv3_shape[1] * conv3_shape[2] * conv3_shape[3]
                 reshape = tf.reshape(conv3, [-1, dim])
                 linear1 = self._linear_layer(reshape, dim, hiddens)
+                tf.add_to_collection('features', linear1)
             with tf.variable_scope('linear2'):
-                hiddens = output_dim ; dim = 512
+                hiddens = output_dim ; dim = feature_dim
                 action_values = self._linear_layer(linear1, dim, hiddens)
         if network_type == 'vgg':
             with tf.variable_scope('conv1'):
@@ -321,14 +333,18 @@ class DeepQNetwork(object):
                 pool3 = self._pool_layer(conv3)
             pool_shape = pool3.get_shape().as_list()
             with tf.variable_scope('linear1'):
-                hiddens = 512 ; dim = pool_shape[1] * pool_shape[2] * pool_shape[3]
+                hiddens = feature_dim ; dim = pool_shape[1] * pool_shape[2] * pool_shape[3]
                 reshape = tf.reshape(pool3, [-1, dim])
                 linear1 = self._linear_layer(reshape, dim, hiddens)
+                tf.add_to_collection('features', linear1)
             with tf.variable_scope('linear2'):
-                hiddens = output_dim ; dim = 512
+                hiddens = output_dim ; dim = feature_dim
                 action_values = self._linear_layer(linear1, dim, hiddens)
         assert action_values is not None
         return action_values
+
+    def get_features(self, states):
+        return self.sess.run(self.features, feed_dict={self.images: states})
 
     def add_train_data_set(self, data_set):
         self.train_data_set = data_set
@@ -348,17 +364,24 @@ class DeepQNetwork(object):
     def update_network(self):
         self.sess.run(self.copy_cur2old_op)
 
-    def get_action_values(self, states):
+    def get_action_values(self, states, get_feature=False):
+        if get_feature:
+            return self.sess.run([self.action_values_given_state, self.features], feed_dict={self.images: states})
         return self.sess.run(self.action_values_given_state, feed_dict={self.images: states})
 
     def get_action_values_old(self, states):
         return self.sess.run(self.action_values_given_state_old, feed_dict={self.images_old: states})
 
-    def choose_action(self, phi):
+    def choose_action(self, phi, get_feature=False):
         phi = np.expand_dims(phi, axis=0)
-        action_values = self.get_action_values(phi)
-        action = np.argmax(action_values, axis=1)[0]
-        return action
+        if get_feature:
+            action_values, feature = self.get_action_values(phi, get_feature=get_feature)
+            action = np.argmax(action_values, axis=1)[0]
+            return action, action_values[0], feature[0]
+        else:
+            action_values = self.get_action_values(phi, get_feature=get_feature)
+            action = np.argmax(action_values, axis=1)[0]
+            return action, action_values[0]
 
     def epoch_summary(self, epoch, epoch_time, mean_q, total_reward, reward_per_ep):
         """

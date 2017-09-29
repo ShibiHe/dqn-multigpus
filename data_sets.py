@@ -15,16 +15,20 @@ class DataSet(object):
         self.imgs = np.zeros((self.max_steps, self.height, self.width), dtype='uint8')
         self.actions = np.zeros(self.max_steps, dtype='int32')
         self.rewards = np.zeros(self.max_steps, dtype='float32')
+        self.unclipped_rewards = np.zeros(self.max_steps, dtype='float32')
         self.return_value = np.zeros(self.max_steps, dtype='float32')
         self.terminal = np.zeros(self.max_steps, dtype='bool')
         self.start_index = np.zeros(self.max_steps, dtype='int32')
         self.terminal_index = np.zeros(self.max_steps, dtype='int32')
+        self.q_value = np.zeros(self.max_steps, dtype='float32')
+        self.features = np.zeros((self.max_steps, self.flags.feature_dim), dtype='float32')
 
         self.bottom = 0
         self.top = 0
         self.size = 0
 
-    def add_sample(self, img, action, reward, terminal, return_value=0.0, start_index=-1):
+    def add_sample(self, img, action, reward, terminal, return_value=0.0, start_index=-1, q_value=0.0, feature=-1.0):
+        self.unclipped_rewards[self.top] = reward
         if self.flags.clip_reward:
             reward = np.clip(reward, -1, 1)
         self.imgs[self.top] = img
@@ -33,6 +37,8 @@ class DataSet(object):
         self.terminal[self.top] = terminal
         self.return_value[self.top] = return_value
         self.start_index[self.top] = start_index
+        self.q_value[self.top] = q_value
+        self.features[self.top] = feature
         self.terminal_index[self.top] = -1
 
         if self.size == self.max_steps:
@@ -44,22 +50,25 @@ class DataSet(object):
     def __len__(self):
         return self.size
 
-    def last_phi(self):
+    def last_phi(self, index=None):
         """Return the most recent phi (sequence of image frames)."""
-        indexes = np.arange(self.top - self.phi_length, self.top)
-        return self.imgs.take(indexes, axis=0, mode='wrap')
+        if index is None:
+            index = self.top
+        indexes = np.arange(index - self.phi_length, index)
+        phi = self.imgs.take(indexes, axis=0, mode='wrap')
+        terminals = self.terminal.take(indexes[:-1], mode='wrap')
+        for i in xrange(self.phi_length-2,-1,-1):
+            if terminals[i]:
+                phi[0:i+1] = np.stack([phi[i+1]] * (i+1))
+                break
+        return phi
 
     def phi(self, img):
         """Return a phi (sequence of image frames), using the last phi_length -
         1, plus img.
 
         """
-        indexes = np.arange(self.top - self.phi_length + 1, self.top)
-
-        phi = np.empty((self.phi_length, self.height, self.width), dtype='uint8')
-        phi[0:self.phi_length - 1] = self.imgs.take(indexes,
-                                                    axis=0,
-                                                    mode='wrap')
+        phi = self.last_phi()
         phi[-1] = img
         return phi
 
