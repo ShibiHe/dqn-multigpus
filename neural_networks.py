@@ -14,6 +14,7 @@ class DeepQNetwork(object):
         self.feeding_threads_num = flags.feeding_threads
         self.feeding_threads = []
         self.train_data_set = None
+        self.episodic_memory = None
         self.training_started = False
 
         if not flags.use_gpu:
@@ -54,7 +55,7 @@ class DeepQNetwork(object):
         self.saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='current'))
         self.sess = tf.Session(config=config)
         self.sess.run(init)
-        self.update_network()
+        self.sess.run(self.copy_cur2old_op)
         self.summary_writer = tf.summary.FileWriter(flags.logs_path, self.sess.graph)
         self.coord = tf.train.Coordinator()
 
@@ -143,7 +144,7 @@ class DeepQNetwork(object):
         assert self.opt is not None
 
     def _construct_feature_extraction(self):
-        features_list = tf.get_collection('features', scope='current/')
+        features_list = tf.get_collection('features', scope='old/')
         self.features = features_list[0]
         self.feed_features = features_list[1]  # this is from data pipeline during training
         assert self.feed_features.shape == [self.flags.batch, 512]
@@ -344,10 +345,13 @@ class DeepQNetwork(object):
         return action_values
 
     def get_features(self, states):
-        return self.sess.run(self.features, feed_dict={self.images: states})
+        return self.sess.run(self.features, feed_dict={self.images_old: states})
 
     def add_train_data_set(self, data_set):
         self.train_data_set = data_set
+
+    def add_episodic_memory(self, episodic_memory):
+        self.episodic_memory = episodic_memory
 
     def train(self):
         if not self.training_started:  # first time training
@@ -363,6 +367,7 @@ class DeepQNetwork(object):
 
     def update_network(self):
         self.sess.run(self.copy_cur2old_op)
+        self.episodic_memory.refresh_features()
 
     def get_action_values(self, states, get_feature=False):
         if get_feature:
@@ -372,16 +377,11 @@ class DeepQNetwork(object):
     def get_action_values_old(self, states):
         return self.sess.run(self.action_values_given_state_old, feed_dict={self.images_old: states})
 
-    def choose_action(self, phi, get_feature=False):
+    def choose_action(self, phi):
         phi = np.expand_dims(phi, axis=0)
-        if get_feature:
-            action_values, feature = self.get_action_values(phi, get_feature=get_feature)
-            action = np.argmax(action_values, axis=1)[0]
-            return action, action_values[0], feature[0]
-        else:
-            action_values = self.get_action_values(phi, get_feature=get_feature)
-            action = np.argmax(action_values, axis=1)[0]
-            return action, action_values[0]
+        action_values = self.get_action_values(phi)
+        action = np.argmax(action_values, axis=1)[0]
+        return action, action_values[0]
 
     def epoch_summary(self, epoch, epoch_time, mean_q, total_reward, reward_per_ep):
         """

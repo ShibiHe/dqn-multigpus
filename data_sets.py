@@ -21,7 +21,6 @@ class DataSet(object):
         self.start_index = np.zeros(self.max_steps, dtype='int32')
         self.terminal_index = np.zeros(self.max_steps, dtype='int32')
         self.q_value = np.zeros(self.max_steps, dtype='float32')
-        self.features = np.zeros((self.max_steps, self.flags.feature_dim), dtype='float32')
 
         self.bottom = 0
         self.top = 0
@@ -38,7 +37,6 @@ class DataSet(object):
         self.return_value[self.top] = return_value
         self.start_index[self.top] = start_index
         self.q_value[self.top] = q_value
-        self.features[self.top] = feature
         self.terminal_index[self.top] = -1
 
         if self.size == self.max_steps:

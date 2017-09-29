@@ -15,6 +15,8 @@ class QLearning(object):
         self.test_data_set = data_sets.DataSet(flags, max_steps=flags.phi_length * 2)
         self.network.add_train_data_set(self.train_data_set)
         self.episodic_memory = EpisodicMemory(flags, self.network)
+        self.network.add_episodic_memory(self.episodic_memory)
+
         self.epsilon = flags.ep_st
         if flags.ep_decay != 0:
             self.epsilon_rate = (flags.ep_st - flags.ep_min) / flags.ep_decay
@@ -126,8 +128,7 @@ class QLearning(object):
             if self.train_data_set.q_value[index] < q_return:
                 self.episodic_memory.add_item(phi,
                                               self.train_data_set.actions[index],
-                                              unclipped_cumulative_reward,
-                                              self.train_data_set.features[index])
+                                              unclipped_cumulative_reward)
 
             phi = self.train_data_set.last_phi(index)
             index = (index - 1) % self.train_data_set.max_steps
@@ -140,10 +141,11 @@ class QLearning(object):
                                 start_index=self.start_index, q_value=0.0, feature=-1.0)
             return np.random.randint(0, self.flags.num_actions)
         phi = data_set.phi(img)
-        action, q_action_values, feature = self.network.choose_action(phi, get_feature=True)
+        action, q_action_values = self.network.choose_action(phi)
         data_set.add_sample(self.last_img, self.last_action, reward_received, False,
-                            start_index=self.start_index, q_value=q_action_values[action], feature=feature)
+                            start_index=self.start_index, q_value=q_action_values[action])
 
+        feature = self.network.get_features(np.expand_dims(phi, 0))[0]
         episodic_action_values = self.episodic_memory.lookup(feature)
         action2 = np.argmax(episodic_action_values)
         if action == action2:
