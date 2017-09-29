@@ -58,7 +58,14 @@ class ActionMemory(object):
             return 10.0
         distance = feature_distance(self.keys, feature)
         idx = np.argpartition(distance, self.flags.knn)[:self.flags.knn]
-        weight = 1.0 / (distance[idx] + 0.001)
+        distance = distance[idx]
+        min_i = np.argmin(distance)
+        for i in xrange(self.flags.knn):
+            if i != min_i and distance[i] == distance[min_i]:
+                self.values[idx[min_i]] = np.maximum(self.values[idx[min_i]], self.values[idx[i]])
+                self.frequency[idx[i]] = -1000
+
+        weight = 1.0 / (distance + 0.001)
         weight = weight / np.sum(weight)
         self.frequency[idx] = self.frequency[idx] + weight
         cumulative_reward = np.matmul(weight, self.values[idx])
