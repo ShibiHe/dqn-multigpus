@@ -2,20 +2,20 @@ __author__ = 'frankhe'
 import time
 import numpy as np
 import data_sets
-from episodic_memory import EpisodicMemory
 
 
 class QLearning(object):
-    def __init__(self, pid, network, flags, comm):
+    def __init__(self, pid, network, flags, epm, comm):
         self.pid = pid
         self.network = network
         self.flags = flags
+        self.epm = epm
         self.comm = comm
-        self.train_data_set = data_sets.DataSet(flags)
-        self.test_data_set = data_sets.DataSet(flags, max_steps=flags.phi_length * 2)
+        self.train_data_set = data_sets.DataSet(flags, self.epm)
+        self.test_data_set = data_sets.DataSet(flags, None, max_steps=flags.phi_length * 2)
         self.network.add_train_data_set(self.train_data_set)
-        self.episodic_memory = EpisodicMemory(flags, self.network)
-        self.network.add_episodic_memory(self.episodic_memory)
+        sess = self.network.init()
+        self.epm.sess = sess
 
         self.epsilon = flags.ep_st
         if flags.ep_decay != 0:
@@ -99,7 +99,7 @@ class QLearning(object):
         """
         post end episode functions
         """
-        self._post_end_episode(terminal)
+        # self._post_end_episode(terminal)
 
         rho = 0.98
         self.steps_sec_ema = rho * self.steps_sec_ema + (1.0 - rho) * (self.step_counter / episode_time)
@@ -125,10 +125,10 @@ class QLearning(object):
             # self.train_data_set.return_value[index] = q_return
             # self.train_data_set.terminal_index[index] = self.terminal_index
             # add an item to episodic memory
-            if self.train_data_set.q_value[index] < q_return:
-                self.episodic_memory.add_item(phi,
-                                              self.train_data_set.actions[index],
-                                              unclipped_cumulative_reward)
+            # if self.train_data_set.q_value[index] < q_return:
+            #     self.episodic_memory.add_item(phi,
+            #                                   self.train_data_set.actions[index],
+            #                                   unclipped_cumulative_reward)
 
             phi = self.train_data_set.last_phi(index)
             index = (index - 1) % self.train_data_set.max_steps
@@ -138,25 +138,25 @@ class QLearning(object):
     def choose_action(self, data_set, img, epsilon, reward_received):
         if np.random.rand() < epsilon:
             data_set.add_sample(self.last_img, self.last_action, reward_received, False,
-                                start_index=self.start_index, q_value=0.0, feature=-1.0)
+                                start_index=self.start_index)
             return np.random.randint(0, self.flags.num_actions)
         phi = data_set.phi(img)
         action, q_action_values = self.network.choose_action(phi)
         data_set.add_sample(self.last_img, self.last_action, reward_received, False,
-                            start_index=self.start_index, q_value=q_action_values[action])
+                            start_index=self.start_index)
+        return action
 
-        feature = self.network.get_features(np.expand_dims(phi, 0))[0]
-        episodic_action_values = self.episodic_memory.lookup(feature)
-        action2 = np.argmax(episodic_action_values)
-        if action == action2:
-            return action
-        else:
-            w1 = q_action_values[action] / np.sum(q_action_values)
-            w2 = episodic_action_values[action2] / np.sum(episodic_action_values)
-            if w1 > w2:
-                return action
-            else:
-                return action2
+        # episodic_action_values = self.episodic_memory.lookup(feature)
+        # action2 = np.argmax(episodic_action_values)
+        # if action == action2:
+        #     return action
+        # else:
+        #     w1 = q_action_values[action] / np.sum(q_action_values)
+        #     w2 = episodic_action_values[action2] / np.sum(episodic_action_values)
+        #     if w1 > w2:
+        #         return action
+        #     else:
+        #         return action2
 
     def _train(self):
         return self.network.train()
@@ -229,8 +229,8 @@ class QLearning(object):
 
 
 class OptimalityTigheningAgent(QLearning):
-    def __init__(self, pid, network, flags, comm):
-        super(OptimalityTigheningAgent, self).__init__(pid, network, flags, comm)
+    def __init__(self, pid, network, flags, epm, comm):
+        super(OptimalityTigheningAgent, self).__init__(pid, network, flags, epm, comm)
         self.train_data_set = data_sets.OptimalityTighteningDataset(flags)
         self.network.add_train_data_set(self.train_data_set)
 

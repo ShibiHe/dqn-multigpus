@@ -7,6 +7,7 @@ import copy
 import interaction
 import neural_networks
 import agents
+import episodic_memory
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -57,6 +58,7 @@ tf.app.flags.DEFINE_string('loss_func', 'huber', 'loss function: huber; quadrati
 tf.app.flags.DEFINE_string('optimizer', 'adam', 'optimizer type')
 tf.app.flags.DEFINE_integer('train_fr', 4, 'training frequency: train a batch every x steps')
 tf.app.flags.DEFINE_integer('train_st', 50000, 'training start: training starts after x steps')
+tf.app.flags.DEFINE_integer('feature_dim', 512, 'feature dimensions')
 tf.app.flags.DEFINE_bool('clip_reward', True, 'clip reward to -1, 1')
 
 # Multi threads settings
@@ -78,11 +80,10 @@ tf.app.flags.DEFINE_integer('nob', 4, 'number of bounds')
 tf.app.flags.DEFINE_float('pw', 0.8, 'penalty weight')
 
 # memory setting
-tf.app.flags.DEFINE_integer('episodic_memory', 1000, 'episodic memory size')
-tf.app.flags.DEFINE_integer('episodic_memory_buffer', 100, 'episodic memory buffer size')
-tf.app.flags.DEFINE_integer('feature_dim', 512, 'feature dimensions')
-tf.app.flags.DEFINE_string('distance_metric', 'l2', 'nearest neighbor distance metric, l2, cos')
-tf.app.flags.DEFINE_integer('knn', 5, 'number of nearest neighbors')
+tf.app.flags.DEFINE_integer('episodic_memory', 1135019, 'episodic memory size')
+tf.app.flags.DEFINE_bool('epm_use_gpu', False, 'use GPUs')
+tf.app.flags.DEFINE_integer('hash_dim', 128, 'simhash key dimensions')
+tf.app.flags.DEFINE_integer('buckets', 5, 'number of buckets')
 
 
 def initialize(pid, device, flags, comm):
@@ -129,13 +130,16 @@ def initialize(pid, device, flags, comm):
     else:
         network = neural_networks.DeepQNetwork(pid, flags, device)
 
+    # initialize episodic memory
+    epm = episodic_memory.EpisodicMemory(flags, device)
+
     setting_file.write(network.nn_structure_file)
     setting_file.close()
 
     if flags.ot:
-        agent = agents.OptimalityTigheningAgent(pid, network, flags, comm)
+        agent = agents.OptimalityTigheningAgent(pid, network, flags, epm, comm)
     else:
-        agent = agents.QLearning(pid, network, flags, comm)
+        agent = agents.QLearning(pid, network, flags, epm, comm)
     interaction.Interaction(pid, ale, agent, flags, comm).start()
 
 
@@ -175,6 +179,7 @@ def main(argv=None):
     flags = copy.deepcopy(FLAGS)
     flags.seed += int(flags.diff_seed) * pid
     if flags.test:
+        flags.use_gpu = False
         flags.threads = 1  # np=3
         flags.gpus = 1
         flags.epochs = 2
@@ -183,7 +188,6 @@ def main(argv=None):
         flags.summary_fr = 100
         flags.network = 'linear'
         flags.ep_st = 0.5
-        flags.episodic_memory = 100
         flags.episodic_memory_buffer = 10
         flags.train_st = 2000
         flags.freeze = 100

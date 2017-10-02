@@ -14,7 +14,6 @@ class DeepQNetwork(object):
         self.feeding_threads_num = flags.feeding_threads
         self.feeding_threads = []
         self.train_data_set = None
-        self.episodic_memory = None
         self.training_started = False
 
         if not flags.use_gpu:
@@ -43,9 +42,10 @@ class DeepQNetwork(object):
             # summary ops---------------------------
             self._construct_summary_ops()
 
+    def init(self):
         config = tf.ConfigProto()
         config.log_device_placement = False
-        if flags.use_gpu:
+        if self.flags.use_gpu:
             config.gpu_options.allow_growth = False
             if self.flags.gpu_memory_fraction != 0.0:
                 config.gpu_options.per_process_gpu_memory_fraction = self.flags.gpu_memory_fraction
@@ -56,8 +56,9 @@ class DeepQNetwork(object):
         self.sess = tf.Session(config=config)
         self.sess.run(init)
         self.sess.run(self.copy_cur2old_op)
-        self.summary_writer = tf.summary.FileWriter(flags.logs_path, self.sess.graph)
+        self.summary_writer = tf.summary.FileWriter(self.flags.logs_path, self.sess.graph)
         self.coord = tf.train.Coordinator()
+        return self.sess
 
     def _start_feeding_data(self):
         for i in xrange(self.feeding_threads_num):
@@ -350,9 +351,6 @@ class DeepQNetwork(object):
     def add_train_data_set(self, data_set):
         self.train_data_set = data_set
 
-    def add_episodic_memory(self, episodic_memory):
-        self.episodic_memory = episodic_memory
-
     def train(self):
         if not self.training_started:  # first time training
             self._start_feeding_data()
@@ -367,11 +365,8 @@ class DeepQNetwork(object):
 
     def update_network(self):
         self.sess.run(self.copy_cur2old_op)
-        self.episodic_memory.refresh_features()
 
-    def get_action_values(self, states, get_feature=False):
-        if get_feature:
-            return self.sess.run([self.action_values_given_state, self.features], feed_dict={self.images: states})
+    def get_action_values(self, states):
         return self.sess.run(self.action_values_given_state, feed_dict={self.images: states})
 
     def get_action_values_old(self, states):
