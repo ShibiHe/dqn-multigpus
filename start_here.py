@@ -17,7 +17,7 @@ tf.app.flags.DEFINE_integer('steps_per_epoch', 250000, 'Number of steps per epoc
 tf.app.flags.DEFINE_integer('test_length', 125000, 'Number of steps per test')
 tf.app.flags.DEFINE_integer('seed', 123456, 'random seed')
 tf.app.flags.DEFINE_bool('diff_seed', True, 'enable different seed for each process')
-tf.app.flags.DEFINE_integer('summary_fr', 3000, 'summary every x training steps')
+tf.app.flags.DEFINE_integer('summary_fr', 6000, 'summary every x training steps')
 tf.app.flags.DEFINE_string('logs_path', './logs', 'tensor board path')
 tf.app.flags.DEFINE_bool('test', False, 'enable test mode')
 tf.app.flags.DEFINE_bool('ckpt', False, 'enable save models')
@@ -81,7 +81,7 @@ tf.app.flags.DEFINE_float('pw', 0.8, 'penalty weight')
 
 # memory setting
 tf.app.flags.DEFINE_integer('episodic_memory', 1135019, 'episodic memory size')
-tf.app.flags.DEFINE_bool('epm_use_gpu', False, 'use GPUs')
+tf.app.flags.DEFINE_bool('epm_use_gpu', True, 'use GPUs')
 tf.app.flags.DEFINE_integer('hash_dim', 128, 'simhash key dimensions')
 tf.app.flags.DEFINE_integer('buckets', 5, 'number of buckets')
 
@@ -124,6 +124,10 @@ def initialize(pid, device, flags, comm):
     for key, item in flags.__flags.items():
         setting_file.write(key + ' : ' + str(item) + '\n')
 
+    # for test
+    memory_update_file = open(os.path.join(flags.logs_path, 'update_record.txt'), mode='w+')
+    action_selection_file = open(os.path.join(flags.logs_path, 'action_record.txt'), mode='w+')
+
     # initialize agent
     if flags.ot:
         network = neural_networks.OptimalityTighteningNetwork(pid, flags, device)
@@ -140,6 +144,8 @@ def initialize(pid, device, flags, comm):
         agent = agents.OptimalityTigheningAgent(pid, network, flags, epm, comm)
     else:
         agent = agents.QLearning(pid, network, flags, epm, comm)
+    # for test
+    agent.add_record_files(memory_update_file, action_selection_file)
     interaction.Interaction(pid, ale, agent, flags, comm).start()
 
 
@@ -180,6 +186,7 @@ def main(argv=None):
     flags.seed += int(flags.diff_seed) * pid
     if flags.test:
         flags.use_gpu = False
+        flags.epm_use_gpu = False
         flags.threads = 1  # np=3
         flags.gpus = 1
         flags.epochs = 2
@@ -193,6 +200,7 @@ def main(argv=None):
         flags.freeze = 100
         flags.ot = False
         flags.one_bound = True
+        flags.episodic_memory = 557
 
     if pid == flags.threads:
         # process=threads is the printer process and the main process

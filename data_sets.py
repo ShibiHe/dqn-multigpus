@@ -1,11 +1,9 @@
 __author__ = 'frankhe'
 import numpy as np
-from simple_simhash import SimHash
-simhash = SimHash(84 * 84, bucket_sizes=[1135019] * 5)
 
 
 class DataSet(object):
-    def __init__(self, flags, epm, max_steps=None):
+    def __init__(self, flags, max_steps=None):
         self.flags = flags
         self.width = flags.input_width
         self.height = flags.input_height
@@ -26,7 +24,6 @@ class DataSet(object):
         self.bottom = 0
         self.top = 0
         self.size = 0
-        self.epm = epm
 
     def add_sample(self, img, action, reward, terminal, return_value=0.0, start_index=-1):
         self.unclipped_rewards[self.top] = reward
@@ -39,18 +36,6 @@ class DataSet(object):
         self.return_value[self.top] = return_value
         self.start_index[self.top] = start_index
         self.terminal_index[self.top] = -1
-
-
-        print
-        print self.top, '=', simhash.compute_keys(self.imgs[self.top].flatten())
-        for i in range(self.top-1, -1, -1):
-            print 'with i=', i, np.sum((self.imgs[self.top].flatten() - self.imgs[i].flatten()) != 0),
-        if self.top == 10:
-            for i in range(5):
-                self.epm.sess.run(self.epm.p_assign[i], feed_dict={self.epm.p_place: simhash.projection_matrix[i]})
-            print
-            print self.epm.compute_keys(self.imgs[:self.top]).transpose()
-            raw_input()
 
         if self.size == self.max_steps:
             self.bottom = (self.bottom + 1) % self.max_steps

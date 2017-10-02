@@ -11,11 +11,12 @@ class QLearning(object):
         self.flags = flags
         self.epm = epm
         self.comm = comm
-        self.train_data_set = data_sets.DataSet(flags, self.epm)
-        self.test_data_set = data_sets.DataSet(flags, None, max_steps=flags.phi_length * 2)
+        self.train_data_set = data_sets.DataSet(flags)
+        self.test_data_set = data_sets.DataSet(flags, max_steps=flags.phi_length * 2)
         self.network.add_train_data_set(self.train_data_set)
+        self.epm.add_train_data_set(self.train_data_set)
         sess = self.network.init()
-        self.epm.sess = sess
+        self.epm.add_sess(sess)
 
         self.epsilon = flags.ep_st
         if flags.ep_decay != 0:
@@ -46,6 +47,14 @@ class QLearning(object):
         self.episode_counter = 0
         self.total_reward = 0  # add to tensorboard per epoch
         self.reward_per_episode = 0  # add to tensorboard per epoch
+
+        # for test
+        self.memory_update_file = None
+        self.action_slection_file = None
+
+    def add_record_files(self, a, b):
+        self.memory_update_file = a
+        self.action_slection_file = b
 
     def start_episode(self, observation):
         """
@@ -99,7 +108,7 @@ class QLearning(object):
         """
         post end episode functions
         """
-        # self._post_end_episode(terminal)
+        self._post_end_episode(terminal)
 
         rho = 0.98
         self.steps_sec_ema = rho * self.steps_sec_ema + (1.0 - rho) * (self.step_counter / episode_time)
@@ -113,50 +122,44 @@ class QLearning(object):
     def _post_end_episode(self, terminal):
         if self.testing:
             return
-        q_return = 0.0
         unclipped_cumulative_reward = 0.0
         self.start_index = self.train_data_set.top
         self.terminal_index = index = (self.start_index - 1) % self.train_data_set.max_steps
-        phi = self.train_data_set.last_phi()
         while True:
-            q_return = q_return * self.flags.discount + self.train_data_set.rewards[index]
             unclipped_cumulative_reward = unclipped_cumulative_reward * self.flags.discount + \
                                           self.train_data_set.unclipped_rewards[index]
-            # self.train_data_set.return_value[index] = q_return
             # self.train_data_set.terminal_index[index] = self.terminal_index
-            # add an item to episodic memory
-            # if self.train_data_set.q_value[index] < q_return:
-            #     self.episodic_memory.add_item(phi,
-            #                                   self.train_data_set.actions[index],
-            #                                   unclipped_cumulative_reward)
 
-            phi = self.train_data_set.last_phi(index)
+            # add an item to episodic memory
+            self.epm.add_item(index,
+                              unclipped_cumulative_reward)
+
             index = (index - 1) % self.train_data_set.max_steps
             if self.train_data_set.terminal[index] or index == self.train_data_set.bottom:
                 break
 
+        res = self.epm.add_flush()
+        self.memory_update_file.write(str(np.sum(np.equal(res, 1))) + '/' + str(len(res)) + '\n')
+        self.memory_update_file.flush()
+        self.action_slection_file.flush()
+
     def choose_action(self, data_set, img, epsilon, reward_received):
-        if np.random.rand() < epsilon:
-            data_set.add_sample(self.last_img, self.last_action, reward_received, False,
-                                start_index=self.start_index)
-            return np.random.randint(0, self.flags.num_actions)
-        phi = data_set.phi(img)
-        action, q_action_values = self.network.choose_action(phi)
         data_set.add_sample(self.last_img, self.last_action, reward_received, False,
                             start_index=self.start_index)
-        return action
+        if np.random.rand() < epsilon:
+            return np.random.randint(0, self.flags.num_actions)
+        phi = data_set.phi(img)
+        action = self.network.choose_action(phi)
+        sim, unclipped_rewards = self.epm.lookup_single_state(phi[-1])
+        index = np.unravel_index(np.argmax(unclipped_rewards), sim.shape)
+        final_sim = sim[index]
 
-        # episodic_action_values = self.episodic_memory.lookup(feature)
-        # action2 = np.argmax(episodic_action_values)
-        # if action == action2:
-        #     return action
-        # else:
-        #     w1 = q_action_values[action] / np.sum(q_action_values)
-        #     w2 = episodic_action_values[action2] / np.sum(episodic_action_values)
-        #     if w1 > w2:
-        #         return action
-        #     else:
-        #         return action2
+        # for test
+        self.action_slection_file.write(str(action) + '  act2: ' + str(index[0]) + ' sim=' + str(final_sim) +
+                                        ' reward=' + str(unclipped_rewards[index]) + '\n')
+        if np.random.randint(0, self.flags.buckets) < final_sim:
+            return index[0]
+        return action
 
     def _train(self):
         return self.network.train()
