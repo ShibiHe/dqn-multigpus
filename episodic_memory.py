@@ -134,7 +134,7 @@ class EpisodicMemory(object):
         return tf.minimum(dim0, dim1)
 
     def start_updating_memory(self):
-        self.train_data_set.batch_top = self.train_data_set.botom
+        self.train_data_set.batch_top = self.train_data_set.bottom
         for i in xrange(self.flags.feeding_threads):
             t = threading.Thread(target=self._update_thread_process, args=())
             t.setDaemon(True)
