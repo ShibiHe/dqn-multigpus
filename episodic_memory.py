@@ -1,17 +1,24 @@
 __author__ = 'frankhe'
 import numpy as np
 import tensorflow as tf
+import threading
+import time
 
 
 class EpisodicMemory(object):
     def __init__(self, flags, device):
         self.flags = flags
-        self.width = flags.input_width
-        self.height = flags.input_height
-        self.train_data_set =None
-        self.add_indices = []
-        self.add_rewards = []
+        self.original_height = flags.input_height
+        self.original_width = flags.input_width
+        self.width = flags.input_width / 2 * 3
+        self.height = flags.input_height / 2 * 3
+        self.train_data_set = None
         self.sess = None
+        self.coord = tf.train.Coordinator()
+        self.update_threads = []
+
+        # for test
+        self.memory_update_file = None
 
         if not flags.epm_use_gpu:
             device = '/cpu:0'
@@ -52,8 +59,10 @@ class EpisodicMemory(object):
                                                verify_shape=True)
 
                 # compute keys
-                self.states_input_batch = tf.placeholder(tf.uint8, [None, self.height, self.width])
-                states_batch = tf.reshape(tf.cast(self.states_input_batch, tf.float32), [-1, self.height * self.width])
+                self.states_input_batch = tf.placeholder(tf.uint8, [None, self.original_height, self.original_width])
+                resized = tf.image.resize_images(
+                    tf.cast(tf.expand_dims(self.states_input_batch, -1), tf.float32), [self.height, self.width])
+                states_batch = tf.reshape(resized, [-1, self.height * self.width])
                 keys_batch = []
                 for i in range(self.flags.buckets):
                     # out: N * hash_dim   complexity: O(N*7056*hash_dim)
@@ -123,6 +132,42 @@ class EpisodicMemory(object):
         dim1 = tf.reduce_sum(tf.cast(tf.reduce_any(eq_matrix, axis=1), tf.int32))
         return tf.minimum(dim0, dim1)
 
+    def start_updating_memory(self):
+        for i in xrange(self.flags.feeding_threads):
+            t = threading.Thread(target=self._update_thread_process, args=())
+            t.setDaemon(True)
+            self.update_threads.append(t)
+            t.start()
+
+    def stop_updating(self):
+        self.coord.request_stop()
+        self.coord.join(self.update_threads, stop_grace_period_secs=1.0)
+
+    def _update_thread_process(self):
+        while not self.coord.should_stop():
+            if (self.train_data_set.batch_top + 1024) % self.train_data_set.max_steps > self.train_data_set.top:
+                time.sleep(1.0)
+                continue
+            imgs = np.take(self.train_data_set.imgs,
+                           np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + 1024),
+                           axis=0,
+                           mode='wrap')
+            cum_rewards = np.take(self.train_data_set.cum_unclipped_rewards,
+                                  np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + 1024),
+                                  mode='wrap')
+            actions = np.take(self.train_data_set.actions,
+                              np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + 1024),
+                              mode='wrap')
+            self.train_data_set.batch_top = (self.train_data_set.batch_top + 1024) % self.train_data_set.max_steps
+            res = self.sess.run(self.update,
+                                feed_dict={self.states_input_batch: imgs,
+                                           self.rewards: cum_rewards,
+                                           self.actions: actions})
+            # for test
+            self.memory_update_file.write('batchtop= ' + str(self.train_data_set.batch_top) + ' top=' +
+                                          str(self.train_data_set.top) + '\n')
+            self.memory_update_file.flush()
+
     def add_train_data_set(self, data_set):
         self.train_data_set = data_set
 
@@ -133,19 +178,8 @@ class EpisodicMemory(object):
         """states: N * 84 * 84"""
         return self.sess.run(self.batch_keys, feed_dict={self.states_input_batch: states})
 
-    def add_item(self, index, cumulative_unclipped_reward):
-        self.add_indices.append(index)
-        self.add_rewards.append(cumulative_unclipped_reward)
-
-    def add_flush(self):
-        res = self.sess.run(self.update,
-                            feed_dict={self.states_input_batch: self.train_data_set.imgs[self.add_indices],
-                                       self.rewards: self.add_rewards,
-                                       self.actions: self.train_data_set.actions[self.add_indices]})
-        return res
-
     def lookup_single_state(self, state):
-        states = np.reshape(state, [1, self.height, self.width])
+        states = np.reshape(state, [1, self.original_height, self.original_width])
         sim, rewards = self.sess.run([self.similarity, self.estimated_reward], feed_dict={self.states_input_batch: states})
         return sim, rewards
 

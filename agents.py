@@ -15,6 +15,7 @@ class QLearning(object):
         self.test_data_set = data_sets.DataSet(flags, max_steps=flags.phi_length * 2)
         self.network.add_train_data_set(self.train_data_set)
         self.epm.add_train_data_set(self.train_data_set)
+        self.network.epm = self.epm
         sess = self.network.init()
         self.epm.add_sess(sess)
 
@@ -49,11 +50,10 @@ class QLearning(object):
         self.reward_per_episode = 0  # add to tensorboard per epoch
 
         # for test
-        self.memory_update_file = None
         self.action_slection_file = None
 
     def add_record_files(self, a, b):
-        self.memory_update_file = a
+        self.epm.memory_update_file = a
         self.action_slection_file = b
 
     def start_episode(self, observation):
@@ -129,19 +129,10 @@ class QLearning(object):
             unclipped_cumulative_reward = unclipped_cumulative_reward * self.flags.discount + \
                                           self.train_data_set.unclipped_rewards[index]
             # self.train_data_set.terminal_index[index] = self.terminal_index
-
-            # add an item to episodic memory
-            self.epm.add_item(index,
-                              unclipped_cumulative_reward)
-
+            self.train_data_set.cum_unclipped_rewards[index] = unclipped_cumulative_reward
             index = (index - 1) % self.train_data_set.max_steps
             if self.train_data_set.terminal[index] or index == self.train_data_set.bottom:
                 break
-
-        res = self.epm.add_flush()
-        self.memory_update_file.write(str(np.sum(np.equal(res, 1))) + '/' + str(len(res)) + '\n')
-        self.memory_update_file.flush()
-        self.action_slection_file.flush()
 
     def choose_action(self, data_set, img, epsilon, reward_received):
         data_set.add_sample(self.last_img, self.last_action, reward_received, False,
@@ -154,10 +145,11 @@ class QLearning(object):
         index = np.unravel_index(np.argmax(unclipped_rewards), sim.shape)
         final_sim = sim[index]
 
-        # for test
-        self.action_slection_file.write(str(action) + '  act2: ' + str(index[0]) + ' sim=' + str(final_sim) +
-                                        ' reward=' + str(unclipped_rewards[index]) + '\n')
         if np.random.randint(0, self.flags.buckets) < final_sim:
+            # for test
+            self.action_slection_file.write(str(action) + '  act2: ' + str(index[0]) + ' sim=' + str(final_sim) +
+                                            ' reward=' + str(unclipped_rewards[index]) + '\n')
+            self.action_slection_file.flush()
             return index[0]
         return action
 

@@ -200,6 +200,7 @@ def main(argv=None):
         flags.freeze = 100
         flags.ot = False
         flags.one_bound = True
+        flags.memory = 6000
         flags.episodic_memory = 557
 
     if pid == flags.threads:

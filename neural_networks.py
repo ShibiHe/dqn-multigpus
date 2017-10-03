@@ -15,6 +15,7 @@ class DeepQNetwork(object):
         self.feeding_threads = []
         self.train_data_set = None
         self.training_started = False
+        self.epm = None
 
         if not flags.use_gpu:
             device = '/cpu:0'
@@ -71,6 +72,7 @@ class DeepQNetwork(object):
         self.coord.request_stop()
         self.sess.run(self.q_close_op)
         self.coord.join(self.feeding_threads, stop_grace_period_secs=1.0)
+        self.epm.stop_updating()
         self.sess.close()
 
     def _feeding_thread_process(self):
@@ -354,6 +356,7 @@ class DeepQNetwork(object):
     def train(self):
         if not self.training_started:  # first time training
             self._start_feeding_data()
+            self.epm.start_updating_memory()
             self.training_started = True
         _, loss, global_step = self.sess.run([self.apply_gradients, self.loss, self.global_step])
         if global_step % self.flags.summary_fr == 0:

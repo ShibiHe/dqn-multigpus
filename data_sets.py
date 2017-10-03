@@ -16,6 +16,7 @@ class DataSet(object):
         self.actions = np.zeros(self.max_steps, dtype='int32')
         self.rewards = np.zeros(self.max_steps, dtype='float32')
         self.unclipped_rewards = np.zeros(self.max_steps, dtype='float32')
+        self.cum_unclipped_rewards = np.zeros(self.max_steps, dtype='float32')
         self.return_value = np.zeros(self.max_steps, dtype='float32')
         self.terminal = np.zeros(self.max_steps, dtype='bool')
         self.start_index = np.zeros(self.max_steps, dtype='int32')
@@ -25,8 +26,11 @@ class DataSet(object):
         self.top = 0
         self.size = 0
 
+        self.batch_top = 0
+
     def add_sample(self, img, action, reward, terminal, return_value=0.0, start_index=-1):
         self.unclipped_rewards[self.top] = reward
+        self.cum_unclipped_rewards[self.top] = 0.0
         if self.flags.clip_reward:
             reward = np.clip(reward, -1, 1)
         self.imgs[self.top] = img
