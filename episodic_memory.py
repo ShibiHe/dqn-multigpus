@@ -10,13 +10,14 @@ class EpisodicMemory(object):
         self.flags = flags
         self.original_height = flags.input_height
         self.original_width = flags.input_width
-        self.width = flags.input_width / 2 * 3
-        self.height = flags.input_height / 2 * 3
+        self.width = flags.input_width / 3
+        self.height = flags.input_height / 3
         self.train_data_set = None
         self.sess = None
         self.coord = tf.train.Coordinator()
         self.update_threads = []
         self.buffer_step = 8192
+        self.counter = 0
 
         # for test
         self.memory_update_file = None
@@ -165,6 +166,7 @@ class EpisodicMemory(object):
                                 feed_dict={self.states_input_batch: imgs,
                                            self.rewards: cum_rewards,
                                            self.actions: actions})
+            self.counter += 1
             # for test
             self.memory_update_file.write('batchtop= ' + str(self.train_data_set.batch_top) + ' top=' +
                                           str(self.train_data_set.top) + '\n')
