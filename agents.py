@@ -142,7 +142,11 @@ class QLearning(object):
         phi = data_set.phi(img)
         action, action_values = self.network.choose_action(phi)
         max_2 = action_values[np.argpartition(-action_values, 2)[:2]]
-        if np.max(max_2) / (np.min(max_2) + 0.01) > 1.33:
+        ratio = np.max(max_2) / (np.min(max_2) + 0.01)
+
+        # for test
+        self.action_slection_file.write(str(self.global_step_counter) + ':  ratio=' + str(ratio) + '\n')
+        if ratio > 1.33:
             return action
         sim, unclipped_rewards = self.epm.lookup_single_state(phi[-1])
         index = np.unravel_index(np.argmax(unclipped_rewards), sim.shape)

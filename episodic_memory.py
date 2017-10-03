@@ -134,6 +134,7 @@ class EpisodicMemory(object):
         return tf.minimum(dim0, dim1)
 
     def start_updating_memory(self):
+        self.train_data_set.batch_top = self.train_data_set.botom
         for i in xrange(self.flags.feeding_threads):
             t = threading.Thread(target=self._update_thread_process, args=())
             t.setDaemon(True)
@@ -147,7 +148,7 @@ class EpisodicMemory(object):
     def _update_thread_process(self):
         while not self.coord.should_stop():
             if (self.train_data_set.batch_top + self.buffer_step) % self.train_data_set.max_steps > self.train_data_set.top:
-                time.sleep(30.0)
+                time.sleep(10.0)
                 continue
             imgs = np.take(self.train_data_set.imgs,
                            np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + self.buffer_step),
