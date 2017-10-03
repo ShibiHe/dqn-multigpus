@@ -95,9 +95,11 @@ class EpisodicMemory(object):
                 similarity = self._compute_batch_vector_similarity(tf.reshape(query_all_keys, [-1, self.flags.buckets]),
                                                                    single_keys)
                 self.similarity = tf.reshape(similarity, [self.flags.num_actions, self.flags.buckets])
+                action_norm_sim = tf.reduce_sum(self.similarity, axis=1, keep_dims=True)  # A * 1
+                sim_weights = tf.cast(self.similarity, tf.float32) / tf.cast(action_norm_sim, tf.float32)  # A*B
+                final_estimated_rewards = tf.cast(query_rewards, tf.float32) * sim_weights
 
-                self.estimated_reward = tf.multiply(tf.cast(query_rewards, tf.float32) / self.flags.buckets,
-                                                    tf.cast(self.similarity, tf.float32))
+                self.estimated_reward = tf.reduce_sum(final_estimated_rewards, axis=1)  # A
 
     def _dot_product_mod(self, a):
         mod = self.flags.episodic_memory
@@ -184,6 +186,6 @@ class EpisodicMemory(object):
 
     def lookup_single_state(self, state):
         states = np.reshape(state, [1, self.original_height, self.original_width])
-        sim, rewards = self.sess.run([self.similarity, self.estimated_reward], feed_dict={self.states_input_batch: states})
-        return sim, rewards
+        rewards = self.sess.run(self.estimated_reward, feed_dict={self.states_input_batch: states})
+        return rewards
 
