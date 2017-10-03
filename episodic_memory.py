@@ -16,6 +16,7 @@ class EpisodicMemory(object):
         self.sess = None
         self.coord = tf.train.Coordinator()
         self.update_threads = []
+        self.buffer_step = 8192
 
         # for test
         self.memory_update_file = None
@@ -145,20 +146,20 @@ class EpisodicMemory(object):
 
     def _update_thread_process(self):
         while not self.coord.should_stop():
-            if (self.train_data_set.batch_top + 1024) % self.train_data_set.max_steps > self.train_data_set.top:
-                time.sleep(1.0)
+            if (self.train_data_set.batch_top + self.buffer_step) % self.train_data_set.max_steps > self.train_data_set.top:
+                time.sleep(30.0)
                 continue
             imgs = np.take(self.train_data_set.imgs,
-                           np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + 1024),
+                           np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + self.buffer_step),
                            axis=0,
                            mode='wrap')
             cum_rewards = np.take(self.train_data_set.cum_unclipped_rewards,
-                                  np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + 1024),
+                                  np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + self.buffer_step),
                                   mode='wrap')
             actions = np.take(self.train_data_set.actions,
-                              np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + 1024),
+                              np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + self.buffer_step),
                               mode='wrap')
-            self.train_data_set.batch_top = (self.train_data_set.batch_top + 1024) % self.train_data_set.max_steps
+            self.train_data_set.batch_top = (self.train_data_set.batch_top + self.buffer_step) % self.train_data_set.max_steps
             res = self.sess.run(self.update,
                                 feed_dict={self.states_input_batch: imgs,
                                            self.rewards: cum_rewards,

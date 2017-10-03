@@ -140,7 +140,10 @@ class QLearning(object):
         if np.random.rand() < epsilon:
             return np.random.randint(0, self.flags.num_actions)
         phi = data_set.phi(img)
-        action = self.network.choose_action(phi)
+        action, action_values = self.network.choose_action(phi)
+        max_2 = action_values[np.argpartition(-action_values, 2)[:2]]
+        if np.max(max_2) / (np.min(max_2) + 0.01) > 1.33:
+            return action
         sim, unclipped_rewards = self.epm.lookup_single_state(phi[-1])
         index = np.unravel_index(np.argmax(unclipped_rewards), sim.shape)
         final_sim = sim[index]
