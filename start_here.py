@@ -80,10 +80,10 @@ tf.app.flags.DEFINE_integer('nob', 4, 'number of bounds')
 tf.app.flags.DEFINE_float('pw', 0.8, 'penalty weight')
 
 # memory setting
-tf.app.flags.DEFINE_integer('episodic_memory', 11083, 'episodic memory size')
+tf.app.flags.DEFINE_integer('episodic_memory', 123341, 'episodic memory size')
 tf.app.flags.DEFINE_bool('epm_use_gpu', True, 'use GPUs')
 tf.app.flags.DEFINE_integer('hash_dim', 128, 'simhash key dimensions')
-tf.app.flags.DEFINE_integer('buckets', 5, 'number of buckets')
+tf.app.flags.DEFINE_integer('buckets', 8, 'number of buckets')
 
 
 def initialize(pid, device, flags, comm):

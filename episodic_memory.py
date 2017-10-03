@@ -37,6 +37,7 @@ class EpisodicMemory(object):
                                          trainable=False,
                                          name='hash_table',
                                          dtype=tf.int32)
+                self.hash_table_non_zero = tf.reduce_sum(tf.cast(tf.not_equal(self.table[..., -1], 0), tf.int32))
 
                 # initialize projection matrix
                 self.projection_matrices = []
@@ -68,8 +69,14 @@ class EpisodicMemory(object):
                 keys_batch = []
                 for i in range(self.flags.buckets):
                     # out: N * hash_dim   complexity: O(N*7056*hash_dim)
-                    bit_keys = tf.cast(tf.sign(tf.matmul(states_batch, self.projection_matrices[i])), tf.int32)
-                    keys = tf.map_fn(self._dot_product_mod, bit_keys, back_prop=False)  # N
+                    bit_keys = tf.cast(tf.sign(tf.matmul(states_batch, self.projection_matrices[i])), tf.int32)  # N,dim
+
+                    # here we use _dot_product_mod to avoid overflow when prime number is large
+                    # keys = tf.map_fn(self._dot_product_mod, bit_keys, back_prop=False)  # N
+                    # normal matmul method
+                    keys = tf.matmul(bit_keys, tf.reshape(self.bit_weights, [-1, 1])) % self.flags.episodic_memory
+                    keys = tf.reshape(keys, [-1])
+
                     keys_batch.append(keys)
                 self.batch_keys = tf.stack(keys_batch, axis=1, name='keys')  # N * bucket_size
 
@@ -79,7 +86,8 @@ class EpisodicMemory(object):
                 rewards = tf.cast(self.rewards, tf.int32)
                 actions = self.actions
                 batch_key_values = tf.stack(keys_batch + [rewards, actions], axis=1, name='batch_update')  # N * (bucket_size + 1)
-                self.update = tf.map_fn(self._update_hash_table, batch_key_values, back_prop=False)
+                self.update = tf.map_fn(self._update_hash_table, batch_key_values, back_prop=False,
+                                        parallel_iterations=1024)
 
                 # lookup a key in memory
                 single_keys = self.batch_keys[0]  # (5,)
@@ -126,7 +134,7 @@ class EpisodicMemory(object):
         """input: m is (N, d)  y is (d,)  output: (N,)"""
         def f1(m_x):
             return self._compute_vector_vector_similarity(m_x, y)
-        return tf.map_fn(f1, m, back_prop=False)
+        return tf.map_fn(f1, m, back_prop=False, parallel_iterations=64)
 
     @staticmethod
     def _compute_vector_vector_similarity(a, b):
@@ -172,6 +180,11 @@ class EpisodicMemory(object):
             # for test
             self.memory_update_file.write('batchtop= ' + str(self.train_data_set.batch_top) + ' top=' +
                                           str(self.train_data_set.top) + '\n')
+            if self.counter % 10 == 0:
+                non_zero = self.sess.run(self.hash_table_non_zero)
+                self.memory_update_file.write('hash table nonzero: ' + str(non_zero) + '/' +
+                                              str(self.flags.episodic_memory * self.flags.buckets *
+                                                  self.flags.num_actions) + '\n')
             self.memory_update_file.flush()
 
     def add_train_data_set(self, data_set):
