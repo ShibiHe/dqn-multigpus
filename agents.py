@@ -144,7 +144,7 @@ class QLearning(object):
         # max_2 = action_values[np.argpartition(-action_values, 2)[:2]]
         # ratio = np.max(max_2) / (np.min(max_2) + 0.01)
         ratio = np.max(action_values) / (np.median(action_values) + 0.01)
-        if ratio > 1.33:
+        if self.global_step_counter < self.flags.ep_decay or ratio > 1.33:
             return action
         sim, unclipped_rewards = self.epm.lookup_single_state(phi[-1])
         index = np.unravel_index(np.argmax(unclipped_rewards), sim.shape)
@@ -180,7 +180,7 @@ class QLearning(object):
             # Training--------------------------
             if len(self.train_data_set) > self.flags.train_st:
                 self.epsilon = max(self.flags.ep_min, self.epsilon - self.epsilon_rate)
-                if self.trained_batch_counter > self.flags.ep_decay_b:
+                if self.global_step_counter > self.flags.ep_decay_b:
                     self.epsilon = 0.01
                 action = self.choose_action(self.train_data_set, observation, self.epsilon, reward)
                 if self.global_step_counter % self.flags.train_fr == 0:
