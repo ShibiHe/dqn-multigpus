@@ -141,24 +141,23 @@ class QLearning(object):
             return np.random.randint(0, self.flags.num_actions)
         phi = data_set.phi(img)
         action, action_values = self.network.choose_action(phi)
-        max_2 = action_values[np.argpartition(-action_values, 2)[:2]]
-        ratio = np.max(max_2) / (np.min(max_2) + 0.01)
-
-        # for test
-        self.action_slection_file.write(str(self.global_step_counter) + ':  ratio=' + str(ratio) + '\n')
+        # max_2 = action_values[np.argpartition(-action_values, 2)[:2]]
+        # ratio = np.max(max_2) / (np.min(max_2) + 0.01)
+        ratio = np.max(action_values) / (np.median(action_values) + 0.01)
         if ratio > 1.33:
             return action
         sim, unclipped_rewards = self.epm.lookup_single_state(phi[-1])
         index = np.unravel_index(np.argmax(unclipped_rewards), sim.shape)
         final_sim = sim[index]
 
-        if np.random.randint(0, self.flags.buckets) < final_sim:
-            # for test
-            self.action_slection_file.write(str(action) + '  act2: ' + str(index[0]) + ' sim=' + str(final_sim) +
+        # if np.random.randint(0, self.flags.buckets) < final_sim:
+        # for test
+        self.action_slection_file.write(str(self.global_step_counter) + ':  ratio=' + str(ratio) + '\n')
+        self.action_slection_file.write(str(action) + '  act2: ' + str(index[0]) + ' sim=' + str(final_sim) +
                                             ' reward=' + str(unclipped_rewards[index]) + '\n')
-            self.action_slection_file.flush()
-            return index[0]
-        return action
+            # self.action_slection_file.flush()
+        return index[0]
+        # return action
 
     def _train(self):
         return self.network.train()
