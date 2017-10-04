@@ -10,13 +10,13 @@ class EpisodicMemory(object):
         self.flags = flags
         self.original_height = flags.input_height
         self.original_width = flags.input_width
-        self.width = flags.input_width / 3
-        self.height = flags.input_height / 3
+        self.width = flags.input_width / self.flags.shrink
+        self.height = flags.input_height / self.flags.shrink
         self.train_data_set = None
         self.sess = None
         self.coord = tf.train.Coordinator()
         self.update_threads = []
-        self.buffer_step = 8192
+        self.buffer_step = self.flags.buffer_step
         self.counter = 0
 
         # for test
@@ -87,7 +87,7 @@ class EpisodicMemory(object):
                 actions = self.actions
                 batch_key_values = tf.stack(keys_batch + [rewards, actions], axis=1, name='batch_update')  # N * (bucket_size + 1)
                 self.update = tf.map_fn(self._update_hash_table, batch_key_values, back_prop=False,
-                                        parallel_iterations=1024)
+                                        parallel_iterations=4096)
 
                 # lookup a key in memory
                 single_keys = self.batch_keys[0]  # (5,)
@@ -140,7 +140,7 @@ class EpisodicMemory(object):
         """input: m is (N, d)  y is (d,)  output: (N,)"""
         def f1(m_x):
             return self._compute_vector_vector_similarity(m_x, y)
-        return tf.map_fn(f1, m, back_prop=False, parallel_iterations=64)
+        return tf.map_fn(f1, m, back_prop=False, parallel_iterations=128)
 
     @staticmethod
     def _compute_vector_vector_similarity(a, b):

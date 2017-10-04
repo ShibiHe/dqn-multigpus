@@ -84,6 +84,9 @@ tf.app.flags.DEFINE_integer('episodic_memory', 123341, 'episodic memory size')
 tf.app.flags.DEFINE_bool('epm_use_gpu', True, 'use GPUs')
 tf.app.flags.DEFINE_integer('hash_dim', 128, 'simhash key dimensions')
 tf.app.flags.DEFINE_integer('buckets', 8, 'number of buckets')
+tf.app.flags.DEFINE_integer('buffer_step', 8192, 'step of update')
+tf.app.flags.DEFINE_integer('shrink', 3, 'key_image = image size / shrink')
+
 
 
 def initialize(pid, device, flags, comm):
@@ -202,6 +205,7 @@ def main(argv=None):
         flags.one_bound = True
         flags.memory = 8000
         flags.episodic_memory = 557
+        flags.buffer_step = 32
 
     if pid == flags.threads:
         # process=threads is the printer process and the main process
