@@ -117,18 +117,24 @@ class EpisodicMemory(object):
         return key
 
     def _update_hash_table(self, x):
+        # an interesting problem is that tf.map_fn does not support no return op. So cant use tf.group
         action = x[-1]
         reward = x[-2]
+        ops = []
         for i in range(self.flags.buckets):
             index = tf.stack([x[i], i, action])  # (3,)
             old_reward = tf.gather_nd(self.table, indices=index)[-1]  # (bucket + 1,)
 
             def f1():
-                tf.scatter_nd_update(self.table, indices=index, updates=x[:-1])
-                return 1
-            return tf.cond(tf.greater_equal(reward, old_reward),
-                           true_fn=f1,
-                           false_fn=lambda: 0)
+                res = tf.scatter_nd_update(self.table,
+                                           indices=tf.expand_dims(index, axis=0),
+                                           updates=tf.expand_dims(x[:-1], axis=0))
+                return tf.reduce_max(res)
+            op = tf.cond(tf.greater_equal(reward, old_reward),
+                         true_fn=f1,
+                         false_fn=lambda: 0)
+            ops.append(op)
+        return tf.reduce_max(tf.stack(ops))
 
     def _compute_batch_vector_similarity(self, m, y):
         """input: m is (N, d)  y is (d,)  output: (N,)"""
@@ -159,7 +165,7 @@ class EpisodicMemory(object):
     def _update_thread_process(self):
         while not self.coord.should_stop():
             if (self.train_data_set.batch_top + self.buffer_step) % self.train_data_set.max_steps > self.train_data_set.top:
-                time.sleep(10.0)
+                time.sleep(30.0)
                 continue
             imgs = np.take(self.train_data_set.imgs,
                            np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + self.buffer_step),
@@ -172,10 +178,10 @@ class EpisodicMemory(object):
                               np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + self.buffer_step),
                               mode='wrap')
             self.train_data_set.batch_top = (self.train_data_set.batch_top + self.buffer_step) % self.train_data_set.max_steps
-            res = self.sess.run(self.update,
-                                feed_dict={self.states_input_batch: imgs,
-                                           self.rewards: cum_rewards,
-                                           self.actions: actions})
+            self.sess.run(self.update,
+                          feed_dict={self.states_input_batch: imgs,
+                                     self.rewards: cum_rewards,
+                                     self.actions: actions})
             self.counter += 1
             # for test
             self.memory_update_file.write('batchtop= ' + str(self.train_data_set.batch_top) + ' top=' +
