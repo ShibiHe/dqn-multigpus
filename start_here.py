@@ -14,7 +14,7 @@ FLAGS = tf.app.flags.FLAGS
 # Experiment settings
 tf.app.flags.DEFINE_integer('epochs', 40, 'Number of training epochs')
 tf.app.flags.DEFINE_integer('steps_per_epoch', 250000, 'Number of steps per epoch')
-tf.app.flags.DEFINE_integer('test_length', 125000, 'Number of steps per test')
+tf.app.flags.DEFINE_integer('test_length', 100000, 'Number of steps per test')
 tf.app.flags.DEFINE_integer('seed', 123456, 'random seed')
 tf.app.flags.DEFINE_bool('diff_seed', True, 'enable different seed for each process')
 tf.app.flags.DEFINE_integer('summary_fr', 6000, 'summary every x training steps')
@@ -23,7 +23,7 @@ tf.app.flags.DEFINE_bool('test', False, 'enable test mode')
 tf.app.flags.DEFINE_bool('ckpt', False, 'enable save models')
 tf.app.flags.DEFINE_integer('feeding_threads', 1, 'feeding data threads')
 tf.app.flags.DEFINE_integer('feeding_queue_size', 50, 'feeding queue capacity')
-tf.app.flags.DEFINE_float('gpu_memory_fraction', 0.3, 'gpu memory fraction, 0.0 = no limit')
+tf.app.flags.DEFINE_float('gpu_memory_fraction', 0.4, 'gpu memory fraction, 0.0 = no limit')
 
 # ALE Environment settings
 tf.app.flags.DEFINE_string('rom', 'breakout', 'game ROM')
@@ -80,12 +80,12 @@ tf.app.flags.DEFINE_integer('nob', 4, 'number of bounds')
 tf.app.flags.DEFINE_float('pw', 0.8, 'penalty weight')
 
 # memory setting
-tf.app.flags.DEFINE_integer('episodic_memory', 123341, 'episodic memory size')
+tf.app.flags.DEFINE_integer('episodic_memory', 890119, 'episodic memory size')
 tf.app.flags.DEFINE_bool('epm_use_gpu', True, 'use GPUs')
 tf.app.flags.DEFINE_integer('hash_dim', 128, 'simhash key dimensions')
 tf.app.flags.DEFINE_integer('buckets', 8, 'number of buckets')
 tf.app.flags.DEFINE_integer('buffer_step', 8192, 'step of update')
-tf.app.flags.DEFINE_integer('shrink', 3, 'key_image = image size / shrink')
+tf.app.flags.DEFINE_integer('shrink', 2, 'key_image = image size / shrink')
 
 
 def initialize(pid, device, flags, comm):

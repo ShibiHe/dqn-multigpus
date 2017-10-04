@@ -35,6 +35,7 @@ class QLearning(object):
         self.testing_data = None
         self.trained_batch_counter = 0
         self.global_step_counter = 0
+        self.start_use_epm = int(self.flags.episodic_memory / self.flags.buffer_step)
 
         # episode attributes:
         self.step_counter = 0
@@ -144,16 +145,23 @@ class QLearning(object):
         # max_2 = action_values[np.argpartition(-action_values, 2)[:2]]
         # ratio = np.max(max_2) / (np.min(max_2) + 0.01)
         ratio = action_values[action] / (np.median(action_values) + 0.01)
-        if self.epm.counter < 60 or ratio > 1.33:
-            return action
+
+        # for test
+        status = 'TESTs' if self.testing else 'TRAIN'
+        writing_s = "{} {!s:8} ratio={:7.2f}  epsilon={:5.2f}\n".format(status, self.global_step_counter, ratio,
+                                                                          epsilon)
+        self.action_slection_file.write(writing_s)
+
+        # if self.epm.counter < self.start_use_epm or ratio > 1.33:
+        #     return action
         unclipped_rewards = self.epm.lookup_single_state(phi[-1])
         action2 = np.argmax(unclipped_rewards)
+
         # for test
-        self.action_slection_file.write(str(self.global_step_counter) + ':  ratio=' + str(ratio) + '\n')
-        self.action_slection_file.write('act1: ' + str(action) + '  act2: ' + str(action2) +
-                                        ' reward1=' + str(action_values[action]) +
-                                        ' reward2=' + str(unclipped_rewards[action2]) + '\n')
-            # self.action_slection_file.flush()
+        writing_s = "      {!s:8} Act1:{!s:3} Act2:{!s:3}  reward1={:10.2f} reward2={:10.2f}\n".format(
+            self.global_step_counter, action, action2, action_values[action], unclipped_rewards[action2])
+        self.action_slection_file.write(writing_s)
+
         if unclipped_rewards[action2] > action_values[action]:
             return action2
         return action
