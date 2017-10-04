@@ -84,7 +84,7 @@ tf.app.flags.DEFINE_integer('episodic_memory', 890119, 'episodic memory size')
 tf.app.flags.DEFINE_bool('epm_use_gpu', True, 'use GPUs')
 tf.app.flags.DEFINE_integer('hash_dim', 128, 'simhash key dimensions')
 tf.app.flags.DEFINE_integer('buckets', 8, 'number of buckets')
-tf.app.flags.DEFINE_integer('buffer_step', 8192, 'step of update')
+tf.app.flags.DEFINE_integer('buffer_step', 2048, 'step of update')
 tf.app.flags.DEFINE_integer('shrink', 2, 'key_image = image size / shrink')
 
 
