@@ -206,6 +206,7 @@ def main(argv=None):
         flags.memory = 8000
         flags.episodic_memory = 557
         flags.buffer_step = 32
+        flags.buckets = 4
 
     if pid == flags.threads:
         # process=threads is the printer process and the main process

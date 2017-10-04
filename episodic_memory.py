@@ -85,18 +85,30 @@ class EpisodicMemory(object):
                 self.actions = tf.placeholder(tf.int32, [None])
                 rewards = tf.cast(self.rewards, tf.int32)
                 actions = self.actions
-                batch_key_values = tf.stack(keys_batch + [rewards, actions], axis=1, name='batch_update')  # N * (bucket_size + 1)
-                self.update = tf.map_fn(self._update_hash_table, batch_key_values, back_prop=False,
-                                        parallel_iterations=4096)
+                batch_key_values = tf.stack(keys_batch + [rewards, actions], axis=1, name='batch_update')  # N * (bucket_size + 2)
+                indices = tf.map_fn(self._get_hash_table_indices, batch_key_values,
+                                    back_prop=False,
+                                    parallel_iterations=1024)  # N * bucket * 3
+                values = batch_key_values[..., :-1]  # value in hash containing bucket keys and a reward
+                values = tf.reshape(tf.tile(values, [1, self.flags.buckets]),
+                                    [-1, self.flags.buckets, self.flags.buckets + 1])  # N * bucket * 3
+                current_reward = values[..., -1]  # N, bucket
+                old_reward = tf.reshape(tf.gather_nd(self.table, indices=tf.reshape(indices, [-1, 3]))[..., -1],
+                                        [-1, self.flags.buckets])  # N * bucket
+                mask = tf.greater_equal(current_reward, old_reward)
+                final_indices = tf.boolean_mask(indices, mask)
+                final_values = tf.boolean_mask(values, mask)
+                self.update = tf.scatter_nd_update(self.table, indices=final_indices, updates=final_values,
+                                                   use_locking=False)
 
                 # lookup a key in memory
                 single_keys = self.batch_keys[0]  # (5,)
-                results = []
+                indices = []
                 for i in range(self.flags.buckets):
                     index = tf.stack([single_keys[i], i])
-                    res = tf.gather_nd(self.table, indices=index)
-                    results.append(res)
-                query_result = tf.stack(results, axis=1)  # A * bucket * (bucket+1)
+                    indices.append(index)
+                res = tf.gather_nd(self.table, indices=indices)
+                query_result = tf.transpose(res, [1, 0, 2])  # A * bucket * (bucket+1)
                 query_rewards = query_result[..., -1]  # A * bucket
                 query_all_keys = query_result[..., :-1]  # A * bucket * bucket
 
@@ -116,25 +128,15 @@ class EpisodicMemory(object):
         key = tf.scan(lambda cum, x: (cum + x) % mod, c, back_prop=False)[-1]
         return key
 
-    def _update_hash_table(self, x):
-        # an interesting problem is that tf.map_fn does not support no return op. So cant use tf.group
+    def _get_hash_table_indices(self, x):
+        """return index x[bucket], bucket, action"""
         action = x[-1]
-        reward = x[-2]
-        ops = []
+        # reward = x[-2]
+        indices = []
         for i in range(self.flags.buckets):
             index = tf.stack([x[i], i, action])  # (3,)
-            old_reward = tf.gather_nd(self.table, indices=index)[-1]  # (bucket + 1,)
-
-            def f1():
-                res = tf.scatter_nd_update(self.table,
-                                           indices=tf.expand_dims(index, axis=0),
-                                           updates=tf.expand_dims(x[:-1], axis=0))
-                return tf.reduce_max(res)
-            op = tf.cond(tf.greater_equal(reward, old_reward),
-                         true_fn=f1,
-                         false_fn=lambda: 0)
-            ops.append(op)
-        return tf.reduce_max(tf.stack(ops))
+            indices.append(index)
+        return tf.stack(indices)
 
     def _compute_batch_vector_similarity(self, m, y):
         """input: m is (N, d)  y is (d,)  output: (N,)"""
