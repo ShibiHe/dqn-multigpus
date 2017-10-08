@@ -127,8 +127,8 @@ class DeepQNetwork(object):
             current_scope.reuse_variables()
             self.feed_action_values_given_state = self._inference(self.feed_images)
             self._activation_summary(self.feed_action_values_given_state)
-            current_scope.reuse_variables()
-            self.feed_double_dqn_given_state_old = self._inference(self.feed_images_old)
+            # current_scope.reuse_variables()
+            # self.feed_double_dqn_given_state_old = self._inference(self.feed_images_old)
         with tf.variable_scope('old') as old_scope:
             self.nn_structure_file += 'OLD:\n'
             self.action_values_given_state_old = self._inference(self.images_old)
@@ -162,10 +162,10 @@ class DeepQNetwork(object):
     def _construct_training_graph(self):
         discount = tf.constant(self.flags.discount, tf.float32, [], 'discount', True)
         with tf.name_scope('diff'):
-            double_actions = tf.one_hot(tf.argmax(self.feed_double_dqn_given_state_old, axis=1),
-                                        self.flags.num_actions, axis=-1, dtype=tf.float32)
+            # double_actions = tf.one_hot(tf.argmax(self.feed_double_dqn_given_state_old, axis=1),
+            #                             self.flags.num_actions, axis=-1, dtype=tf.float32)
             targets = self.feed_rewards + (1.0 - tf.cast(self.feed_terminals, tf.float32)) * discount * \
-                                     tf.reduce_sum(self.feed_action_values_given_state_old * double_actions, axis=1)
+                                          tf.reduce_max(self.feed_action_values_given_state_old, axis=1)
             targets = tf.stop_gradient(tf.maximum(targets, self.feed_return_value))
             actions = tf.one_hot(self.feed_actions, self.flags.num_actions, axis=-1, dtype=tf.float32)
             q_s_a = tf.reduce_sum(self.feed_action_values_given_state * actions, axis=1)
