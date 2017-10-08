@@ -142,6 +142,8 @@ class QLearning(object):
             return np.random.randint(0, self.flags.num_actions)
         phi = data_set.phi(img)  # 4 * 84 * 84
         if self.testing:
+            data_set.add_sample(self.last_img, self.last_action, reward_received, False,
+                                start_index=self.start_index)
             return self.network.choose_action(phi)
         q_action_values, mem_action_values = self.network.sess.run(
             [self.network.action_values_given_state,

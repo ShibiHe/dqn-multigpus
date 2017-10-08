@@ -166,7 +166,7 @@ class DeepQNetwork(object):
             #                             self.flags.num_actions, axis=-1, dtype=tf.float32)
             targets = self.feed_rewards + (1.0 - tf.cast(self.feed_terminals, tf.float32)) * discount * \
                                           tf.reduce_max(self.feed_action_values_given_state_old, axis=1)
-            targets = tf.stop_gradient(tf.maximum(targets, self.feed_return_value))
+            targets = tf.stop_gradient(targets)
             actions = tf.one_hot(self.feed_actions, self.flags.num_actions, axis=-1, dtype=tf.float32)
             q_s_a = tf.reduce_sum(self.feed_action_values_given_state * actions, axis=1)
             diff = q_s_a - targets
