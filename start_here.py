@@ -80,11 +80,11 @@ tf.app.flags.DEFINE_integer('nob', 4, 'number of bounds')
 tf.app.flags.DEFINE_float('pw', 0.8, 'penalty weight')
 
 # memory setting
-tf.app.flags.DEFINE_integer('episodic_memory', 890119, 'episodic memory size')
+tf.app.flags.DEFINE_integer('episodic_memory', 203569, 'episodic memory size')
 tf.app.flags.DEFINE_bool('epm_use_gpu', True, 'use GPUs')
 tf.app.flags.DEFINE_integer('hash_dim', 128, 'simhash key dimensions')
 tf.app.flags.DEFINE_integer('buckets', 8, 'number of buckets')
-tf.app.flags.DEFINE_integer('buffer_step', 2048, 'step of update')
+tf.app.flags.DEFINE_integer('buffer_step', 4096, 'step of update')
 tf.app.flags.DEFINE_integer('shrink', 2, 'key_image = image size / shrink')
 
 
