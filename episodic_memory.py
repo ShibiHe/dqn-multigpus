@@ -63,8 +63,11 @@ class EpisodicMemory(object):
 
                 # compute keys
                 self.states_input_batch = tf.placeholder(tf.uint8, [None, self.original_height, self.original_width])
-                resized = tf.image.resize_images(
-                    tf.cast(tf.expand_dims(self.states_input_batch, -1), tf.float32), [self.height, self.width])
+                resized = tf.nn.max_pool(
+                    tf.cast(tf.expand_dims(self.states_input_batch, -1), tf.float32),
+                    [1, self.flags.shrink, self.flags.shrink, 1],
+                    [1, self.flags.shrink, self.flags.shrink, 1],
+                    'SAME')
                 states_batch = tf.reshape(resized, [-1, self.height * self.width])
                 keys_batch = []
                 for i in range(self.flags.buckets):
@@ -114,12 +117,17 @@ class EpisodicMemory(object):
 
                 similarity = self._compute_batch_vector_similarity(tf.reshape(query_all_keys, [-1, self.flags.buckets]),
                                                                    single_keys)
-                self.similarity = tf.reshape(similarity, [self.flags.num_actions, self.flags.buckets])
-                action_norm_sim = tf.reduce_sum(self.similarity, axis=1, keep_dims=True)  # A * 1
-                sim_weights = tf.cast(self.similarity, tf.float32) / tf.cast(action_norm_sim, tf.float32)  # A*B
+                self.similarity = tf.cast(tf.reshape(similarity, [self.flags.num_actions, self.flags.buckets]),
+                                          tf.float32)
+                # action_norm_sim = tf.reduce_sum(self.similarity, axis=1, keep_dims=True)  # A * 1
+                # sim_weights = tf.cast(self.similarity, tf.float32) / tf.cast(action_norm_sim, tf.float32)  # A*B
+                sim_weights = tf.nn.softmax(self.similarity, dim=1)
                 final_estimated_rewards = tf.cast(query_rewards, tf.float32) * sim_weights
-
-                self.estimated_reward = tf.reduce_sum(final_estimated_rewards, axis=1)  # A
+                confidence = tf.cast(tf.reduce_any(
+                    tf.greater_equal(self.similarity, tf.constant(self.flags.buckets / 2, tf.float32)),
+                    axis=1), tf.float32)
+                self.estimated_reward = tf.reduce_sum(final_estimated_rewards, axis=1) * confidence + \
+                                        (1.0 - confidence) * -10000
 
     def _dot_product_mod(self, a):
         mod = self.flags.episodic_memory
@@ -173,7 +181,7 @@ class EpisodicMemory(object):
                            np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + self.buffer_step),
                            axis=0,
                            mode='wrap')
-            cum_rewards = np.take(self.train_data_set.cum_unclipped_rewards,
+            cum_rewards = np.take(self.train_data_set.cum_rewards,
                                   np.arange(self.train_data_set.batch_top, self.train_data_set.batch_top + self.buffer_step),
                                   mode='wrap')
             actions = np.take(self.train_data_set.actions,

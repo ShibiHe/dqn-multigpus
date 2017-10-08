@@ -123,48 +123,51 @@ class QLearning(object):
     def _post_end_episode(self, terminal):
         if self.testing:
             return
-        unclipped_cumulative_reward = 0.0
+        cumulative_reward = 0.0
         self.start_index = self.train_data_set.top
         self.terminal_index = index = (self.start_index - 1) % self.train_data_set.max_steps
         while True:
-            unclipped_cumulative_reward = unclipped_cumulative_reward * self.flags.discount + \
-                                          self.train_data_set.unclipped_rewards[index]
+            cumulative_reward = cumulative_reward * self.flags.discount + \
+                                          self.train_data_set.rewards[index]
             # self.train_data_set.terminal_index[index] = self.terminal_index
-            self.train_data_set.cum_unclipped_rewards[index] = unclipped_cumulative_reward
+            self.train_data_set.cum_rewards[index] = cumulative_reward
             index = (index - 1) % self.train_data_set.max_steps
             if self.train_data_set.terminal[index] or index == self.train_data_set.bottom:
                 break
 
     def choose_action(self, data_set, img, epsilon, reward_received):
-        data_set.add_sample(self.last_img, self.last_action, reward_received, False,
-                            start_index=self.start_index)
         if np.random.rand() < epsilon:
+            data_set.add_sample(self.last_img, self.last_action, reward_received, False,
+                                start_index=self.start_index)
             return np.random.randint(0, self.flags.num_actions)
-        phi = data_set.phi(img)
-        action, action_values = self.network.choose_action(phi)
-        # max_2 = action_values[np.argpartition(-action_values, 2)[:2]]
-        # ratio = np.max(max_2) / (np.min(max_2) + 0.01)
-        ratio = action_values[action] / (np.median(action_values) + 0.01)
+        phi = data_set.phi(img)  # 4 * 84 * 84
+        q_action_values, mem_action_values = self.network.sess.run(
+            [self.network.action_values_given_state,
+             self.epm.estimated_reward],
+            feed_dict={self.network.images: np.expand_dims(phi, axis=0),
+                       self.epm.states_input_batch: np.expand_dims(phi[-1], axis=0)})
+        q_action_values = q_action_values[0]
+        action1 = np.argmax(q_action_values)
+        action2 = np.argmax(mem_action_values)
+        value1 = q_action_values[action1]
+        value2 = mem_action_values[action2]
+
+        data_set.add_sample(self.last_img, self.last_action, reward_received, False,
+                            start_index=self.start_index, return_value=value2 if value2 > value1 else -10000)
 
         # for test
         status = 'TESTs' if self.testing else 'TRAIN'
-        writing_s = "{} {!s:8} ratio={:7.2f}  epsilon={:5.2f}\n".format(status, self.global_step_counter, ratio,
-                                                                          epsilon)
+        writing_s = "{} {!s:8} Episode_step={!s:6} A1={:2d} A2={:2d} v1={:5.2f} v2={:5.2f} epsilon={:5.2f}\n".format(
+            status, self.global_step_counter, self.step_counter, action1, action2, value1, value2, epsilon)
         self.action_slection_file.write(writing_s)
 
-        # if self.epm.counter < self.start_use_epm or ratio > 1.33:
-        #     return action
-        unclipped_rewards = self.epm.lookup_single_state(phi[-1])
-        action2 = np.argmax(unclipped_rewards)
-
-        # for test
-        writing_s = "      {!s:8} Act1:{!s:3} Act2:{!s:3}  reward1={:10.2f} reward2={:10.2f}\n".format(
-            self.global_step_counter, action, action2, action_values[action], unclipped_rewards[action2])
-        self.action_slection_file.write(writing_s)
-
-        if unclipped_rewards[action2] > action_values[action]:
-            return action2
-        return action
+        if action1 == action2 or value1 > value2:
+            return action1
+        else:
+            if np.random.uniform() < 0.5:
+                return action1
+            else:
+                return action2
 
     def _train(self):
         return self.network.train()

@@ -77,7 +77,8 @@ class DeepQNetwork(object):
 
     def _feeding_thread_process(self):
         while not self.coord.should_stop():
-            imgs, actions, rewards, terminals = self.train_data_set.random_batch(self.flags.batch)
+            imgs, actions, rewards, terminals, return_value = self.train_data_set.random_batch(
+                self.flags.batch, get_return_value=True)
             if self.coord.should_stop():
                 return
             try:
@@ -85,6 +86,7 @@ class DeepQNetwork(object):
                                                           self.images_old: imgs[:, 1:, ...],
                                                           self.actions: actions,
                                                           self.rewards: rewards,
+                                                          self.return_value: return_value,
                                                           self.terminals: terminals})
             except tf.errors.CancelledError:
                 return
@@ -101,18 +103,21 @@ class DeepQNetwork(object):
                                              name='images_old')
             self.actions = tf.placeholder(tf.int32, [None])
             self.rewards = tf.placeholder(tf.float32, [None])
+            self.return_value = tf.placeholder(tf.float32, [None])
             self.terminals = tf.placeholder(tf.bool, [None])
             self.queue = tf.FIFOQueue(capacity=self.flags.feeding_queue_size,
-                                      dtypes=[tf.float32, tf.float32, tf.int32, tf.float32, tf.bool])
-            self.enqueue_op = self.queue.enqueue([self.images, self.images_old, self.actions, self.rewards, self.terminals])
+                                      dtypes=[tf.float32, tf.float32, tf.int32, tf.float32, tf.float32, tf.bool])
+            self.enqueue_op = self.queue.enqueue(
+                [self.images, self.images_old, self.actions, self.rewards, self.return_value, self.terminals])
             self.q_size_op = self.queue.size()
             self.q_close_op = self.queue.close(cancel_pending_enqueues=True)
             input_tensors = self.queue.dequeue()
-            self.feed_images, self.feed_images_old, self.feed_actions, self.feed_rewards, self.feed_terminals = input_tensors
+            self.feed_images, self.feed_images_old, self.feed_actions, self.feed_rewards, self.feed_return_value, self.feed_terminals = input_tensors
             self.feed_images.set_shape([self.flags.batch, self.flags.phi_length, self.flags.input_height, self.flags.input_width])
             self.feed_images_old.set_shape([self.flags.batch, self.flags.phi_length, self.flags.input_height, self.flags.input_width])
             self.feed_actions.set_shape([self.flags.batch])
             self.feed_rewards.set_shape([self.flags.batch])
+            self.feed_return_value.set_shape([self.flags.batch])
             self.feed_terminals.set_shape([self.flags.batch])
 
     def _construct_inference(self):
@@ -122,6 +127,8 @@ class DeepQNetwork(object):
             current_scope.reuse_variables()
             self.feed_action_values_given_state = self._inference(self.feed_images)
             self._activation_summary(self.feed_action_values_given_state)
+            current_scope.reuse_variables()
+            self.feed_double_dqn_given_state_old = self._inference(self.feed_images_old)
         with tf.variable_scope('old') as old_scope:
             self.nn_structure_file += 'OLD:\n'
             self.action_values_given_state_old = self._inference(self.images_old)
@@ -155,9 +162,11 @@ class DeepQNetwork(object):
     def _construct_training_graph(self):
         discount = tf.constant(self.flags.discount, tf.float32, [], 'discount', True)
         with tf.name_scope('diff'):
+            double_actions = tf.one_hot(tf.argmax(self.feed_double_dqn_given_state_old, axis=1),
+                                        self.flags.num_actions, axis=-1, dtype=tf.float32)
             targets = self.feed_rewards + (1.0 - tf.cast(self.feed_terminals, tf.float32)) * discount * \
-                                     tf.reduce_max(self.feed_action_values_given_state_old, axis=1)
-            targets = tf.stop_gradient(targets)
+                                     tf.reduce_sum(self.feed_action_values_given_state_old * double_actions, axis=1)
+            targets = tf.stop_gradient(tf.maximum(targets, self.feed_return_value))
             actions = tf.one_hot(self.feed_actions, self.flags.num_actions, axis=-1, dtype=tf.float32)
             q_s_a = tf.reduce_sum(self.feed_action_values_given_state * actions, axis=1)
             diff = q_s_a - targets

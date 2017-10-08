@@ -47,7 +47,7 @@ tf.app.flags.DEFINE_float('discount', 0.99, 'discount rate')
 tf.app.flags.DEFINE_float('ep_st', 1.0, 'epsilon start value')
 tf.app.flags.DEFINE_float('ep_min', 0.1, 'epsilon minimum value')
 tf.app.flags.DEFINE_float('ep_decay', 250000*FLAGS.epochs/10, 'steps for epsilon reaching minimum')  # 1/10
-tf.app.flags.DEFINE_float('ep_decay_b', 250000*FLAGS.epochs/10*5, 'trainings for epsilon reaching 0.01')  # 1/2
+tf.app.flags.DEFINE_float('ep_decay_b', 250000*FLAGS.epochs/10/4*5, 'trainings for epsilon reaching 0.01')  # 1/2
 tf.app.flags.DEFINE_integer('phi_length', 4, 'frames for representing a state')
 tf.app.flags.DEFINE_integer('memory', 1000000, 'replay memory size')
 tf.app.flags.DEFINE_integer('batch', 32, 'training batch size')
@@ -222,7 +222,7 @@ def main(argv=None):
         end_threads = np.zeros(flags.threads, dtype=np.bool_)
         while True:
             message_dict = {}
-            for i in xrange(flags.threads * 2):
+            for i in xrange(flags.threads + flags.threads):
                 if np.all(end_threads):
                     return
                 pid, key, message = comm.recv(source=MPI.ANY_SOURCE)
