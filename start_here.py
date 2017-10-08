@@ -22,7 +22,7 @@ tf.app.flags.DEFINE_integer('summary_fr', 3000, 'summary every x training steps'
 tf.app.flags.DEFINE_string('logs_path', './logs', 'tensor board path')
 tf.app.flags.DEFINE_bool('curses', False, 'if use curses to show status')
 tf.app.flags.DEFINE_integer('feeding_threads', 1, 'feeding data threads')
-tf.app.flags.DEFINE_integer('feeding_queue_size', 150, 'feeding queue capacity')
+tf.app.flags.DEFINE_integer('feeding_queue_size', 50, 'feeding queue capacity')
 
 # ALE Environment settings
 tf.app.flags.DEFINE_string('rom', 'breakout', 'game ROM')
