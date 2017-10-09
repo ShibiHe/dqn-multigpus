@@ -141,10 +141,10 @@ class QLearning(object):
                                 start_index=self.start_index)
             return np.random.randint(0, self.flags.num_actions)
         phi = data_set.phi(img)  # 4 * 84 * 84
-        if self.testing:
-            data_set.add_sample(self.last_img, self.last_action, reward_received, False,
-                                start_index=self.start_index)
-            return self.network.choose_action(phi)
+        # if self.testing:
+        #     data_set.add_sample(self.last_img, self.last_action, reward_received, False,
+        #                         start_index=self.start_index)
+        #     return self.network.choose_action(phi)
         q_action_values, mem_action_values = self.network.sess.run(
             [self.network.action_values_given_state,
              self.epm.estimated_reward],
@@ -165,13 +165,10 @@ class QLearning(object):
             status, self.global_step_counter, self.step_counter, action1, action2, value1, value2, epsilon)
         self.action_slection_file.write(writing_s)
 
-        if action1 == action2 or value1 > value2:
+        if value1 > value2:
             return action1
         else:
-            if np.random.uniform() < 0.5:
-                return action1
-            else:
-                return action2
+            return action2
 
     def _train(self):
         return self.network.train()
