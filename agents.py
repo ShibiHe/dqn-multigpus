@@ -127,7 +127,7 @@ class QLearning(object):
         writing_s = "{} {!s:8} Episode_step={!s:6} A1={:2d} v1={:5.2f} epsilon={:5.2f}\n".format(
             status, self.global_step_counter, self.step_counter, action, q_value, epsilon)
         self.action_selection_file.write(writing_s)
-        
+
         return action
 
     def _train(self):

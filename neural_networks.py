@@ -363,7 +363,7 @@ class DeepQNetwork(object):
         phi = np.expand_dims(phi, axis=0)
         action_values = self.get_action_values(phi)
         action = np.argmax(action_values, axis=1)[0]
-        return action, action_values[action]
+        return action, action_values[0, action]
 
     def epoch_summary(self, epoch, epoch_time, mean_q, total_reward, reward_per_ep):
         """
