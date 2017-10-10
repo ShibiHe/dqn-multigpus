@@ -46,7 +46,7 @@ tf.app.flags.DEFINE_float('discount', 0.99, 'discount rate')
 tf.app.flags.DEFINE_float('ep_st', 1.0, 'epsilon start value')
 tf.app.flags.DEFINE_float('ep_min', 0.1, 'epsilon minimum value')
 tf.app.flags.DEFINE_float('ep_decay', 250000*FLAGS.epochs/10, 'steps for epsilon reaching minimum')  # 1/10
-tf.app.flags.DEFINE_float('ep_decay_b', 250000*FLAGS.epochs/10*5, 'trainings for epsilon reaching 0.01')  # 1/2
+tf.app.flags.DEFINE_float('ep_decay_b', 250000*FLAGS.epochs/10/4*5, 'trainings for epsilon reaching 0.01')  # 1/2
 tf.app.flags.DEFINE_integer('phi_length', 4, 'frames for representing a state')
 tf.app.flags.DEFINE_integer('memory', 1000000, 'replay memory size')
 tf.app.flags.DEFINE_integer('batch', 32, 'training batch size')
@@ -112,6 +112,7 @@ def initialize(pid, device, flags, comm):
     tf.gfile.MakeDirs(flags.logs_path)
 
     # print settings
+    action_selection_file = open(os.path.join(flags.logs_path, 'action_record.txt'), mode='w+')
     setting_file = open(os.path.join(flags.logs_path, 'flags.txt'), mode='w+')
     for key, item in flags.__flags.items():
         setting_file.write(key + ' : ' + str(item) + '\n')
@@ -129,6 +130,7 @@ def initialize(pid, device, flags, comm):
         agent = agents.OptimalityTigheningAgent(pid, network, flags, comm)
     else:
         agent = agents.QLearning(pid, network, flags, comm)
+    agent.add_record_files(action_selection_file)
     interaction.Interaction(pid, ale, agent, flags, comm).start()
 
 

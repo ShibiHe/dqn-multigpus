@@ -43,6 +43,11 @@ class QLearning(object):
         self.total_reward = 0  # add to tensorboard per epoch
         self.reward_per_episode = 0  # add to tensorboard per epoch
 
+        self.action_selection_file = None
+
+    def add_record_files(self, f):
+        self.action_selection_file = f
+
     def start_episode(self, observation):
         """
         This method is called once at the beginning of each episode.
@@ -116,7 +121,13 @@ class QLearning(object):
         phi = data_set.phi(img)
         if self.step_counter < self.flags.phi_length:
             phi[0:self.flags.phi_length - 1] = np.stack([img for _ in xrange(self.flags.phi_length - 1)], axis=0)
-        action = self.network.choose_action(phi)
+        action, q_value = self.network.choose_action(phi)
+
+        status = 'TESTs' if self.testing else 'TRAIN'
+        writing_s = "{} {!s:8} Episode_step={!s:6} A1={:2d} v1={:5.2f} epsilon={:5.2f}\n".format(
+            status, self.global_step_counter, self.step_counter, action, q_value, epsilon)
+        self.action_selection_file.write(writing_s)
+        
         return action
 
     def _train(self):
